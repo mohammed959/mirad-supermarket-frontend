@@ -86,8 +86,8 @@ export default function AdminUsersPage() {
       ) : users.length === 0 ? (
         <EmptyState title="No users found" />
       ) : (
-        <div className="rounded-2xl bg-white border border-gray-100 overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="rounded-2xl bg-white border border-gray-100 overflow-x-auto">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="border-b border-gray-100 bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase">Mobile</th>

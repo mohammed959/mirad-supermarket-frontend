@@ -12,7 +12,13 @@ import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
 import { BrandLogo } from '@/components/common/BrandLogo';
 import { cn } from '@/lib/utils';
 
-export function AdminSidebar() {
+interface Props {
+  /** Called when a nav link or logout is activated — used to close the
+   *  off-canvas drawer on mobile. No-op on desktop (static sidebar). */
+  onNavigate?: () => void;
+}
+
+export function AdminSidebar({ onNavigate }: Props = {}) {
   const t = useTranslations();
   const pathname = usePathname();
   const router = useRouter();
@@ -81,6 +87,7 @@ export function AdminSidebar() {
             <Link
               key={href}
               href={href}
+              onClick={onNavigate}
               className={cn(
                 'flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
                 isActive(href, exact)
@@ -100,7 +107,7 @@ export function AdminSidebar() {
           <LanguageSwitcher className="w-full justify-center" />
         </div>
         <button
-          onClick={() => { logout(); router.push('/admin/login'); }}
+          onClick={() => { onNavigate?.(); logout(); router.push('/admin/login'); }}
           className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors"
         >
           <LogOut className="h-4 w-4" />

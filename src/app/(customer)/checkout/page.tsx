@@ -5,6 +5,7 @@ import Link from 'next/link';
 import useSWR from 'swr';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'next-intl';
+import { useCartItemNames } from '@/hooks/useCartItemNames';
 import {
   ShoppingBag, MapPin, Sparkles, AlertTriangle, ChevronRight,
   Truck, Store, Info, ShieldOff, ShieldCheck,
@@ -63,6 +64,7 @@ export default function CheckoutPage() {
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotal());
   const clearCart = useCartStore((s) => s.clearCart);
+  const nameFor = useCartItemNames(items);
 
   const locLabel = useLocationStore((s) => s.label);
   const locLine = useLocationStore((s) => s.addressLine);
@@ -406,7 +408,7 @@ export default function CheckoutPage() {
         {items.map((item) => (
           <div key={item.productId} className="flex justify-between items-center text-sm">
             <div className="min-w-0">
-              <p className="font-medium text-gray-800 truncate">{item.productName}</p>
+              <p className="font-medium text-gray-800 truncate">{nameFor(item)}</p>
               <p className="text-xs text-gray-500">× {item.quantity}</p>
             </div>
             <p className="font-semibold text-gray-900 shrink-0 ms-3">

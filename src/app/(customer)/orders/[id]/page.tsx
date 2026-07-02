@@ -72,8 +72,11 @@ export default function OrderDetailPage() {
   const driverMobile = order.driver?.mobile;
   const isPickup = order.fulfillmentType === 'PICKUP';
 
+  // Cancellable until the driver starts the journey (everything before
+  // OUT_FOR_DELIVERY) — mirrors CUSTOMER_CANCELLABLE on the backend.
   const CANCELLABLE: typeof order.status[] = [
-    'NEW', 'ASSIGNED_TO_PICKER', 'PICKING_IN_PROGRESS', 'READY_FOR_DELIVERY', 'READY_FOR_PICKUP',
+    'NEW', 'PAYMENT_VERIFIED', 'ASSIGNED_TO_PICKER', 'PICKING_IN_PROGRESS',
+    'READY_FOR_DELIVERY', 'READY_FOR_PICKUP', 'ASSIGNED_TO_DRIVER',
   ];
   const canCancel = CANCELLABLE.includes(order.status);
 
@@ -105,6 +108,7 @@ export default function OrderDetailPage() {
         items.map((i) => ({
           productId: i.productId,
           productName: i.productName,
+          productNameAr: i.productNameAr,
           productImage: i.productImage,
           price: i.price,
           quantity: i.quantity,
@@ -374,16 +378,19 @@ export default function OrderDetailPage() {
             <span>{t('cart.discount')}</span><span>-{formatPrice(order.discountTotal)}</span>
           </div>
         )}
-        <div className="flex justify-between text-gray-600">
-          <span>{t('cart.delivery')}</span>
-          <span>
-            {Number(order.deliveryFee) === 0 ? (
-              <span className="text-green-600 font-semibold">{t('common.free')}</span>
-            ) : (
-              formatPrice(order.deliveryFee)
-            )}
-          </span>
-        </div>
+        {/* Delivery fee row — pickup orders have no delivery fee, so hide it entirely */}
+        {!isPickup && (
+          <div className="flex justify-between text-gray-600">
+            <span>{t('cart.delivery')}</span>
+            <span>
+              {Number(order.deliveryFee) === 0 ? (
+                <span className="text-green-600 font-semibold">{t('common.free')}</span>
+              ) : (
+                formatPrice(order.deliveryFee)
+              )}
+            </span>
+          </div>
+        )}
         <div className="flex justify-between border-t pt-2 font-bold text-gray-900">
           <span>{t('cart.total')}</span>
           <span className="text-brand-600">{formatPrice(order.total)}</span>

@@ -129,14 +129,14 @@ export default function LocationPage() {
         longitude: pin.lng,
       };
 
+      const isEdit = formMode?.kind === 'edit';
       let saved: CustomerAddress;
-      if (formMode?.kind === 'edit') {
+      if (isEdit && formMode) {
         const res = await api.put<{ data: CustomerAddress }>(
           `/addresses/${formMode.address.id}`,
           payload,
         );
         saved = res.data.data;
-        toast.success(t('checkout.addressUpdated'));
       } else {
         const res = await api.post<{ data: CustomerAddress }>('/addresses', {
           ...payload,
@@ -147,25 +147,18 @@ export default function LocationPage() {
 
       await mutate('/addresses');
 
-      // If the customer was editing their currently-active address, update the
-      // location store with the new coordinates so the cart and checkout pick
-      // up the change immediately.
-      if (saved.id === currentAddressId) {
-        setLocation({
-          label: saved.label,
-          addressLine: saved.addressLine,
-          latitude: Number(saved.latitude),
-          longitude: Number(saved.longitude),
-          addressId: saved.id,
-        });
-      }
-
-      // After creating a new address, jump into the checkout with it selected.
-      if (formMode?.kind === 'new') {
-        handleSelect(saved);
-        return;
-      }
-      setFormMode(null);
+      // Auto-select the just-saved address as the active delivery location so
+      // checkout and delivery calculations use it immediately — no extra tap.
+      // Applies to BOTH new and updated addresses.
+      setLocation({
+        label: saved.label,
+        addressLine: saved.addressLine,
+        latitude: Number(saved.latitude),
+        longitude: Number(saved.longitude),
+        addressId: saved.id,
+      });
+      toast.success(isEdit ? t('checkout.addressUpdated') : `${t('nav.deliverTo')} ${saved.label}`);
+      router.back();
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? 'Failed to save address');
     } finally {

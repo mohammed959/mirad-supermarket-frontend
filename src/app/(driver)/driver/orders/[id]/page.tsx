@@ -6,8 +6,9 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, Phone, Navigation, MapPin, StickyNote, CheckCircle2, X } from 'lucide-react';
+import { ArrowLeft, Phone, Navigation, MapPin, StickyNote, CheckCircle2, X, Lock, Ban } from 'lucide-react';
 import api from '@/lib/api';
+import { ProductImage } from '@/components/common/ProductImage';
 import { Order } from '@/types';
 import { formatPrice } from '@/lib/utils';
 import { useLocale, pickLocalized } from '@/i18n/useLocale';
@@ -34,8 +35,21 @@ export default function DriverOrderPage() {
       await mutate();
       toast.success(t('common.save'));
       if (status === 'DELIVERED') router.push('/driver');
-    } catch {
-      toast.error(t('common.save'));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? t('common.save'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const confirmReceived = async () => {
+    setLoading(true);
+    try {
+      await api.patch(`/orders/${id}/confirm-received`);
+      await mutate();
+      toast.success(t('driver.productsConfirmed'));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? t('common.save'));
     } finally {
       setLoading(false);
     }
@@ -43,10 +57,13 @@ export default function DriverOrderPage() {
 
   if (isLoading || !order) return <PageSpinner />;
 
+  // The journey is "started" once the order is out for delivery. Map and
+  // navigation stay locked before that (backend also withholds the coords).
+  const journeyStarted = order.status === 'OUT_FOR_DELIVERY' || order.status === 'DELIVERED';
   const hasCoords = order.deliveryLat != null && order.deliveryLng != null;
   const deliveryLat = hasCoords ? Number(order.deliveryLat) : null;
   const deliveryLng = hasCoords ? Number(order.deliveryLng) : null;
-  const navUrl = hasCoords && deliveryLat != null && deliveryLng != null
+  const navUrl = journeyStarted && hasCoords && deliveryLat != null && deliveryLng != null
     ? buildDirectionsUrl(deliveryLat, deliveryLng)
     : null;
 
@@ -80,6 +97,14 @@ export default function DriverOrderPage() {
         )}
       </div>
 
+      {/* Cancelled order — driver can no longer act on it */}
+      {(order.status === 'CANCELLED' || order.status === 'REJECTED') && (
+        <div className="flex items-center gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+          <Ban className="h-5 w-5 shrink-0" />
+          {t('driver.orderCancelled')}
+        </div>
+      )}
+
       {/* Address + delivery notes */}
       {(order.address || hasCoords) && (
         <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
@@ -105,15 +130,22 @@ export default function DriverOrderPage() {
               )}
             </div>
           )}
-          {hasCoords && deliveryLat != null && deliveryLng != null && (
-            <LocationPreviewMap
-              lat={deliveryLat}
-              lng={deliveryLng}
-              language={locale === 'ar' ? 'ar' : 'en'}
-              height={240}
-              showDirections={false}
-              showView
-            />
+          {journeyStarted ? (
+            hasCoords && deliveryLat != null && deliveryLng != null && (
+              <LocationPreviewMap
+                lat={deliveryLat}
+                lng={deliveryLng}
+                language={locale === 'ar' ? 'ar' : 'en'}
+                height={240}
+                showDirections={false}
+                showView
+              />
+            )
+          ) : (
+            <div className="flex items-center gap-2 rounded-xl border border-gray-100 bg-gray-50 px-3 py-3 text-xs text-gray-500">
+              <Lock className="h-4 w-4 shrink-0 text-gray-400" />
+              {t('driver.locationLockedUntilStart')}
+            </div>
           )}
         </div>
       )}
@@ -131,7 +163,7 @@ export default function DriverOrderPage() {
       )}
 
       <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
-        <p className="font-semibold text-gray-900">{t('orders.items')}</p>
+        <p className="font-semibold text-gray-900">{t('orders.items')} ({order.items.length})</p>
         {order.items.map((item) => {
           const productEntity = item.product ?? item.variant?.product ?? null;
           const name = item.productName
@@ -139,13 +171,19 @@ export default function DriverOrderPage() {
             : productEntity
               ? pickLocalized(productEntity, locale)
               : '—';
+          const sku = item.productSku ?? productEntity?.sku ?? null;
           return (
-            <div key={item.id} className="flex justify-between items-center text-sm">
-              <div className="min-w-0">
-                <p className="font-medium text-gray-800 truncate">{name}</p>
-                <p className="text-xs text-gray-500">× {item.quantity}</p>
+            <div key={item.id} className="flex items-center gap-3">
+              <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+                <ProductImage src={productEntity?.imageUrl ?? null} alt={name} fill sizes="56px" className="object-cover" />
               </div>
-              <p className="font-semibold text-gray-900 ms-3 shrink-0">{formatPrice(item.total)}</p>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2">{name}</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  × {item.quantity}{sku ? ` · SKU ${sku}` : ''}
+                </p>
+              </div>
+              <p className="text-sm font-bold text-gray-900 shrink-0 ms-2">{formatPrice(item.total)}</p>
             </div>
           );
         })}
@@ -157,10 +195,38 @@ export default function DriverOrderPage() {
 
       <div className="space-y-2">
         {order.status === 'ASSIGNED_TO_DRIVER' && (
-          <Button className="w-full" size="lg" loading={loading} onClick={() => updateStatus('OUT_FOR_DELIVERY')}>
-            {t('driver.markOutForDelivery')}
-          </Button>
+          <>
+            {/* Step 2 — confirm products received (required before journey) */}
+            {order.driverConfirmedAt ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-green-100 bg-green-50 p-3 text-sm font-medium text-green-700">
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+                {t('driver.productsConfirmed')}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-gray-100 bg-white p-4 space-y-3">
+                <p className="text-sm text-gray-700">{t('driver.confirmReceivedStatement')}</p>
+                <Button className="w-full" loading={loading} onClick={confirmReceived}>
+                  <CheckCircle2 className="h-4 w-4" /> {t('driver.confirmReceived')}
+                </Button>
+              </div>
+            )}
+
+            {/* Step 3 — start journey (locked until confirmed) */}
+            <Button
+              className="w-full"
+              size="lg"
+              loading={loading}
+              disabled={!order.driverConfirmedAt}
+              onClick={() => updateStatus('OUT_FOR_DELIVERY')}
+            >
+              {t('driver.startJourney')}
+            </Button>
+            {!order.driverConfirmedAt && (
+              <p className="text-center text-xs text-gray-400">{t('driver.confirmFirst')}</p>
+            )}
+          </>
         )}
+        {/* Step 4 — complete delivery */}
         {order.status === 'OUT_FOR_DELIVERY' && (
           <Button className="w-full" size="lg" onClick={() => setShowDeliverConfirm(true)}>
             {t('driver.markDelivered')}

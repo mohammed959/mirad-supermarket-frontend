@@ -67,6 +67,7 @@ export const useCartStore = create<CartState>()(
         get().addItem({
           productId: product.id,
           productName: product.name,
+          productNameAr: product.nameAr,
           productImage: product.imageUrl,
           price: Number(product.price ?? 0),
         });

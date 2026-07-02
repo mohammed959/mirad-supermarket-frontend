@@ -101,7 +101,6 @@ export default function AdminImportsPage() {
             <ul className="ml-4 list-disc space-y-0.5">
               <li><code>name</code> — English product name</li>
               <li><code>nameAr</code> — Arabic product name</li>
-              <li><code>brandSlug</code> — must already exist and be active (create the brand first)</li>
               <li><code>categorySlug</code> — must already exist</li>
               <li><code>sku</code> — unique across all products and within the file</li>
               <li><code>price</code> — &gt; 0</li>
@@ -109,6 +108,7 @@ export default function AdminImportsPage() {
             </ul>
             <p className="font-semibold text-gray-700">Optional</p>
             <ul className="ml-4 list-disc space-y-0.5">
+              <li><code>brandSlug</code> — leave blank for no brand; if provided it must exist and be active</li>
               <li><code>description</code>, <code>descriptionAr</code></li>
               <li><code>subcategorySlug</code> — must belong to the chosen category if provided</li>
               <li><code>barcode</code></li>

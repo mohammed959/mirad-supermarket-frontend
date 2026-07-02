@@ -38,7 +38,6 @@ export function ProductCard({ product }: ProductCardProps) {
   const openDetail = () => router.push(`/product-details/${product.id}`);
 
   const displayName = pickLocalized(product, locale);
-  const brandName = product.brand ? pickLocalized(product.brand, locale) : null;
   const available = productAvailable(product);
   const stock = product.stock ?? 0;
   const reserved = product.reserved ?? 0;
@@ -131,12 +130,7 @@ export function ProductCard({ product }: ProductCardProps) {
 
       {/* Info — flex-1 so every card body fills its grid cell uniformly */}
       <div className="flex flex-1 flex-col gap-1 px-2 py-2 sm:gap-1.5 sm:px-3 sm:py-2.5">
-        {brandName && (
-          <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-gray-400 truncate">
-            {brandName}
-          </p>
-        )}
-
+        {/* Brand intentionally hidden in marketplace product cards. */}
         <p className="text-[12px] sm:text-sm font-semibold text-gray-900 line-clamp-2 leading-snug min-h-[2rem] sm:min-h-[2.5rem]">
           {displayName}
         </p>

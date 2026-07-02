@@ -102,6 +102,9 @@ export interface Product {
 export interface CartItem {
   productId: string;
   productName: string;
+  /** Arabic name snapshot so the basket follows the site language. Optional
+   *  for backward-compat with carts persisted before this field existed. */
+  productNameAr?: string | null;
   productImage: string | null;
   price: number;
   quantity: number;
@@ -183,6 +186,7 @@ export interface Order {
   carBrand?: string | null;
   carColor?: string | null;
   pickupCustomerNote?: string | null;
+  driverConfirmedAt?: string | null;
   createdAt: string;
   customer?: { id: string; name: string | null; mobile: string };
   driver?: { id: string; name: string | null; mobile?: string } | null;
@@ -220,6 +224,7 @@ export interface ReorderResult {
   items: Array<{
     productId: string;
     productName: string;
+    productNameAr?: string | null;
     productImage: string | null;
     price: number;
     quantity: number;

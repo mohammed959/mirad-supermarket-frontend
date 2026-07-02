@@ -8,8 +8,8 @@ import useSWR from 'swr';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'next-intl';
 import {
-  ArrowLeft, CheckCircle2, Replace, AlertTriangle, Trash2,
-  Plus, X, Search,
+  ArrowLeft, CheckCircle2, Replace, AlertTriangle,
+  Plus, X, Search, RotateCcw,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { Order, OrderItem, OrderItemStatus, Product } from '@/types';
@@ -35,8 +35,17 @@ const STATUS_KEY: Record<OrderItemStatus, string> = {
   PENDING:     'picker.toPick',
   PICKED:      'picker.picked',
   UNAVAILABLE: 'picker.unavailable',
-  REPLACED:    'picker.replace',
+  REPLACED:    'orders.itemReplaced',
   REMOVED:     'picker.remove',
+};
+
+// Left-accent colour so the picker can spot each item's state at a glance.
+const STATUS_ACCENT: Record<OrderItemStatus, string> = {
+  PENDING:     'border-s-amber-400',
+  PICKED:      'border-s-green-500',
+  UNAVAILABLE: 'border-s-red-500',
+  REPLACED:    'border-s-violet-400',
+  REMOVED:     'border-s-gray-300',
 };
 
 /**
@@ -83,10 +92,21 @@ export default function PickerOrderPage() {
 
   const itemAction = async (
     item: OrderItem,
-    status: 'PICKED' | 'UNAVAILABLE' | 'REMOVED'
+    status: 'PICKED' | 'UNAVAILABLE'
   ) => {
     try {
       await api.patch(`/orders/${id}/items/${item.id}/status`, { status });
+      await mutate();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? t('common.save'));
+    }
+  };
+
+  // Cancel/undo the action on an item → back to "to pick" so the picker can
+  // choose again (also removes a replacement cleanly).
+  const resetAction = async (item: OrderItem) => {
+    try {
+      await api.post(`/orders/${id}/items/${item.id}/reset`);
       await mutate();
     } catch (err: any) {
       toast.error(err.response?.data?.message ?? t('common.save'));
@@ -103,6 +123,14 @@ export default function PickerOrderPage() {
     .every((i) => (i.status ?? 'PENDING') === 'PICKED');
 
   const pendingCount = order.items.filter((i) => (i.status ?? 'PENDING') === 'PENDING').length;
+
+  // Group replacements under their original: a replacement item is any item
+  // referenced by another's replacedByItemId, so it's not shown standalone.
+  const byId = new Map(order.items.map((i) => [i.id, i]));
+  const replacementIds = new Set(
+    order.items.map((i) => i.replacedByItemId).filter((v): v is string => Boolean(v)),
+  );
+  const topLevelItems = order.items.filter((i) => !replacementIds.has(i.id));
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 space-y-4 max-w-lg mx-auto">
@@ -131,92 +159,125 @@ export default function PickerOrderPage() {
         </div>
 
         <div className="space-y-2 mt-3">
-          {order.items.map((item) => {
+          {topLevelItems.map((item) => {
             const status = (item.status ?? 'PENDING') as OrderItemStatus;
             const style = STATUS_STYLE[status];
-            const isFinal = status === 'REPLACED' || status === 'REMOVED';
+            const isReplaced = status === 'REPLACED';
+            const isRemoved = status === 'REMOVED';
+            const dim = isReplaced || isRemoved;
             const { name, sku, barcode, imageUrl } = readItem(item, locale);
+            const replacement = item.replacedByItemId ? byId.get(item.replacedByItemId) : null;
             return (
               <div
                 key={item.id}
-                className={cn(
-                  'rounded-xl border p-3',
-                  isFinal ? 'border-gray-100 bg-gray-50 opacity-70' : 'border-gray-100'
-                )}
+                className={cn('overflow-hidden rounded-xl border border-s-4 border-gray-200', STATUS_ACCENT[status])}
               >
-                <div className="flex gap-3 items-center">
-                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                    <ProductImage src={imageUrl} alt={name} fill sizes="48px" className="object-cover" />
+                <div className={cn('p-3', dim && 'bg-gray-50')}>
+                  <div className="flex gap-3 items-center">
+                    <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                      <ProductImage src={imageUrl} alt={name} fill sizes="48px" className="object-cover" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      {replacement && (
+                        <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">{t('orders.originalLabel')}</p>
+                      )}
+                      <p className={cn('text-sm font-semibold text-gray-900 truncate', status === 'REPLACED' && 'line-through text-gray-500')}>{name}</p>
+                      <p className="text-xs text-gray-500 truncate">
+                        × {item.quantity}{sku ? ` · SKU ${sku}` : ''}
+                        {barcode ? ` · ${barcode}` : ''}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatPrice(item.unitPrice)} {t('cart.items')}
+                      </p>
+                    </div>
+                    <span className={cn('rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0', style.bg, style.text)}>
+                      {t(STATUS_KEY[status])}
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
-                    <p className="text-xs text-gray-500 truncate">
-                      × {item.quantity}{sku ? ` · SKU ${sku}` : ''}
-                      {barcode ? ` · ${barcode}` : ''}
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      {formatPrice(item.unitPrice)} {t('cart.items')}
-                    </p>
-                    {item.notes && (
-                      <p className="text-[11px] text-violet-600 mt-0.5 italic">{item.notes}</p>
-                    )}
-                  </div>
-                  <span className={cn('rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0', style.bg, style.text)}>
-                    {t(STATUS_KEY[status])}
-                  </span>
+
+                  {/* Replaced → offer to cancel the replacement (pick original instead) */}
+                  {isReplaced && (
+                    <button
+                      onClick={() => resetAction(item)}
+                      className="mt-2 flex w-full items-center justify-center gap-1 rounded-lg bg-gray-100 py-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-red-100 hover:text-red-700"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> {t('picker.cancelReplacement')}
+                    </button>
+                  )}
+
+                  {/* Choose / switch action freely for pending/picked/unavailable */}
+                  {!dim && (
+                    <>
+                      <div className="mt-2 grid grid-cols-3 gap-1.5">
+                        <button
+                          onClick={() => itemAction(item, 'PICKED')}
+                          className={cn(
+                            'flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-semibold transition-colors',
+                            status === 'PICKED'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700'
+                          )}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" /> {t('picker.picked')}
+                        </button>
+                        <button
+                          onClick={() => itemAction(item, 'UNAVAILABLE')}
+                          className={cn(
+                            'flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-semibold transition-colors',
+                            status === 'UNAVAILABLE'
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-gray-100 text-gray-600 hover:bg-red-100 hover:text-red-700'
+                          )}
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" /> {t('picker.unavailable')}
+                        </button>
+                        <button
+                          onClick={() => setReplacingItem(item)}
+                          className="flex flex-col items-center gap-0.5 rounded-lg bg-gray-100 py-1.5 text-[10px] font-semibold text-gray-600 hover:bg-violet-100 hover:text-violet-700 transition-colors"
+                        >
+                          <Replace className="h-3.5 w-3.5" /> {t('picker.replace')}
+                        </button>
+                      </div>
+                      {/* Undo the current decision back to "to pick" */}
+                      {status !== 'PENDING' && (
+                        <button
+                          onClick={() => resetAction(item)}
+                          className="mt-1.5 flex w-full items-center justify-center gap-1 rounded-lg py-1.5 text-[11px] font-semibold text-gray-500 transition-colors hover:bg-gray-100"
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" /> {t('picker.undoAction')}
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
 
-                {!isFinal && status !== 'UNAVAILABLE' && (
-                  <div className="mt-2 grid grid-cols-4 gap-1.5">
-                    <button
-                      onClick={() => itemAction(item, 'PICKED')}
-                      disabled={status === 'PICKED'}
-                      className={cn(
-                        'flex flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-semibold transition-colors',
-                        status === 'PICKED'
-                          ? 'bg-green-100 text-green-700 cursor-default'
-                          : 'bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700'
-                      )}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> {t('picker.picked')}
-                    </button>
-                    <button
-                      onClick={() => itemAction(item, 'UNAVAILABLE')}
-                      className="flex flex-col items-center gap-0.5 rounded-lg bg-gray-100 py-1.5 text-[10px] font-semibold text-gray-600 hover:bg-amber-100 hover:text-amber-700 transition-colors"
-                    >
-                      <AlertTriangle className="h-3.5 w-3.5" /> {t('picker.unavailable')}
-                    </button>
-                    <button
-                      onClick={() => setReplacingItem(item)}
-                      className="flex flex-col items-center gap-0.5 rounded-lg bg-gray-100 py-1.5 text-[10px] font-semibold text-gray-600 hover:bg-violet-100 hover:text-violet-700 transition-colors"
-                    >
-                      <Replace className="h-3.5 w-3.5" /> {t('picker.replace')}
-                    </button>
-                    <button
-                      onClick={() => itemAction(item, 'REMOVED')}
-                      className="flex flex-col items-center gap-0.5 rounded-lg bg-gray-100 py-1.5 text-[10px] font-semibold text-gray-600 hover:bg-red-100 hover:text-red-700 transition-colors"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" /> {t('picker.remove')}
-                    </button>
-                  </div>
-                )}
-
-                {status === 'UNAVAILABLE' && (
-                  <div className="mt-2 grid grid-cols-2 gap-1.5">
-                    <button
-                      onClick={() => itemAction(item, 'PICKED')}
-                      className="flex items-center justify-center gap-1 rounded-lg bg-green-100 py-1.5 text-xs font-semibold text-green-700 hover:bg-green-200"
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> {t('picker.picked')}
-                    </button>
-                    <button
-                      onClick={() => setReplacingItem(item)}
-                      className="flex items-center justify-center gap-1 rounded-lg bg-violet-100 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-200"
-                    >
-                      <Replace className="h-3.5 w-3.5" /> {t('picker.replace')}
-                    </button>
-                  </div>
-                )}
+                {/* Replacement shown directly below the original it replaced */}
+                {replacement && (() => {
+                  const r = readItem(replacement, locale);
+                  const rStatus = (replacement.status ?? 'PICKED') as OrderItemStatus;
+                  const rStyle = STATUS_STYLE[rStatus];
+                  return (
+                    <div className="border-t border-dashed border-violet-200 bg-violet-50/60 p-3">
+                      <p className="mb-1.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-violet-600">
+                        <Replace className="h-3 w-3" /> {t('orders.replacementLabel')}
+                      </p>
+                      <div className="flex gap-3 items-center">
+                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-gray-100">
+                          <ProductImage src={r.imageUrl} alt={r.name} fill sizes="40px" className="object-cover" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 truncate">{r.name}</p>
+                          <p className="text-xs text-gray-500 truncate">
+                            × {replacement.quantity}{r.sku ? ` · SKU ${r.sku}` : ''}
+                          </p>
+                        </div>
+                        <span className={cn('rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0', rStyle.bg, rStyle.text)}>
+                          {t(STATUS_KEY[rStatus])}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

@@ -9,6 +9,7 @@ import api from '@/lib/api';
 import { ProductImage } from '@/components/common/ProductImage';
 import { useCartStore } from '@/stores/cartStore';
 import { useLocale } from '@/i18n/useLocale';
+import { useCartItemNames } from '@/hooks/useCartItemNames';
 import { formatPrice } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 
@@ -35,6 +36,7 @@ export function CartDrawer() {
     items, isOpen, closeCart, updateQuantity, removeItem, subtotal,
   } = useCartStore();
   const sub = subtotal();
+  const nameFor = useCartItemNames(items);
 
   const { data: minOrder } = useSWR<MinimumOrder | null>(
     isOpen && items.length > 0 ? '/delivery/minimum-order' : null,
@@ -106,14 +108,16 @@ export function CartDrawer() {
                 </div>
               ) : (
                 <ul className="flex flex-col gap-3">
-                  {items.map((item) => (
+                  {items.map((item) => {
+                    const name = nameFor(item);
+                    return (
                     <li key={item.productId} className="flex gap-3 rounded-xl border border-gray-100 bg-white p-3">
                       <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                        <ProductImage src={item.productImage} alt={item.productName} fill sizes="56px" className="object-cover" />
+                        <ProductImage src={item.productImage} alt={name} fill sizes="56px" className="object-cover" />
                       </div>
 
                       <div className="flex flex-1 flex-col gap-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-900 truncate">{item.productName}</p>
+                        <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
                         <p className="text-sm font-bold text-brand-600">{formatPrice(item.price)}</p>
                       </div>
 
@@ -140,7 +144,8 @@ export function CartDrawer() {
                         </div>
                       </div>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>

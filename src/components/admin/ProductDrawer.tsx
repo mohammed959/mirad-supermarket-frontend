@@ -16,9 +16,9 @@ interface Props {
 
 /**
  * Phase 3 flat product drawer. Variants are gone — SKU, barcode, price
- * and quantity live directly on the product. Brand is required and is
- * picked from `/api/brands` (only active brands surface). Sub-category
- * and the two description fields are optional.
+ * and quantity live directly on the product. Brand is optional and is
+ * picked from `/api/brands` (only active brands surface). Sub-category,
+ * brand, and the two description fields are optional.
  */
 export function ProductDrawer({ open, onClose, onSaved, product }: Props) {
   const isEdit = Boolean(product);
@@ -88,7 +88,7 @@ export function ProductDrawer({ open, onClose, onSaved, product }: Props) {
     const e: Record<string, string> = {};
     if (!name.trim()) e.name = 'Product name is required';
     if (!nameAr.trim()) e.nameAr = 'Arabic name is required';
-    if (!brandId) e.brandId = 'Brand is required';
+    // Brand is optional — no validation.
     if (!categoryId) e.categoryId = 'Category is required';
     if (!sku.trim()) e.sku = 'SKU is required';
     if (!price || Number(price) <= 0) e.price = 'Price must be greater than 0';
@@ -218,25 +218,17 @@ export function ProductDrawer({ open, onClose, onSaved, product }: Props) {
             <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Classification</h3>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-gray-700">Brand *</label>
+              <label className="text-sm font-medium text-gray-700">Brand (optional)</label>
               <select
                 value={brandId}
                 onChange={(e) => setBrandId(e.target.value)}
-                className={`w-full rounded-xl border px-4 py-3 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100 ${
-                  errors.brandId ? 'border-red-400' : 'border-gray-200'
-                }`}
+                className="w-full rounded-xl border border-gray-200 px-4 py-3 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
               >
-                <option value="">Select brand...</option>
+                <option value="">No brand</option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
               </select>
-              {errors.brandId && <p className="text-xs text-red-600">{errors.brandId}</p>}
-              {brands.length === 0 && (
-                <p className="text-xs text-amber-600">
-                  No brands found. Create at least one brand before adding products.
-                </p>
-              )}
             </div>
 
             <div className="space-y-1.5">

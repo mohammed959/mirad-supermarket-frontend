@@ -31,6 +31,15 @@ const PAYMENT_STATUS_COLOR: Record<PaymentStatus, string> = {
   REJECTED:     'bg-red-100 text-red-700',
 };
 
+// Per-item picking status badge (confirmed / not-available / replaced / …).
+const ITEM_STATUS_BADGE: Record<string, { cls: string; key: string }> = {
+  PENDING:     { cls: 'bg-amber-100 text-amber-700',   key: 'orders.itemPending' },
+  PICKED:      { cls: 'bg-green-100 text-green-700',   key: 'orders.itemPicked' },
+  UNAVAILABLE: { cls: 'bg-red-100 text-red-700',       key: 'orders.itemUnavailable' },
+  REPLACED:    { cls: 'bg-violet-100 text-violet-700', key: 'orders.itemReplaced' },
+  REMOVED:     { cls: 'bg-gray-200 text-gray-600',     key: 'orders.itemRemoved' },
+};
+
 const DELIVERY_STATUSES: OrderStatus[] = [
   'NEW',
   'PAYMENT_VERIFIED',
@@ -105,10 +114,61 @@ export default function AdminOrderDetailPage() {
   const [showCancel, setShowCancel] = useState(false);
   const [showRejectPay, setShowRejectPay] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
+  const [showDriverWarn, setShowDriverWarn] = useState(false);
+  const [showCancelledAssign, setShowCancelledAssign] = useState(false);
 
   if (isLoading || !order) return <PageSpinner />;
 
   const customer = order.customer;
+
+  // Group replacements under their original; flag orders with changed items.
+  const itemById = new Map(order.items.map((i) => [i.id, i]));
+  const replacementItemIds = new Set(
+    order.items.map((i) => i.replacedByItemId).filter((v): v is string => Boolean(v)),
+  );
+  const topLevelItems = order.items.filter((i) => !replacementItemIds.has(i.id));
+  const hasModifiedItems = order.items.some(
+    (i) => i.status === 'REPLACED' || i.status === 'UNAVAILABLE',
+  );
+  // Cancelled/rejected orders cannot be assigned until an admin changes status.
+  const isCancelled = order.status === 'CANCELLED' || order.status === 'REJECTED';
+
+  const renderItemRow = (
+    it: (typeof order.items)[number],
+    variant: 'original' | 'replacement' | 'plain',
+  ) => {
+    const productEntity = it.product ?? it.variant?.product ?? null;
+    const productName = it.productName
+      ? (locale === 'ar' && it.productNameAr ? it.productNameAr : it.productName)
+      : productEntity
+        ? pickLocalized(productEntity, locale)
+        : '—';
+    const sku = it.productSku ?? productEntity?.sku ?? it.variant?.sku ?? null;
+    const st = (it.status ?? 'PENDING') as string;
+    const badge = ITEM_STATUS_BADGE[st] ?? ITEM_STATUS_BADGE.PENDING;
+    return (
+      <div className="flex items-center gap-3">
+        <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
+          <ProductImage src={productEntity?.imageUrl ?? null} alt={productName} fill sizes="48px" className="object-cover" />
+        </div>
+        <div className="flex-1 min-w-0">
+          {variant !== 'plain' && (
+            <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400">
+              {variant === 'replacement' ? t('orders.replacementLabel') : t('orders.originalLabel')}
+            </p>
+          )}
+          <p className={`text-sm font-semibold text-gray-900 truncate ${st === 'REPLACED' ? 'line-through text-gray-500' : ''}`}>{productName}</p>
+          <p className="text-xs text-gray-500 truncate">
+            × {it.quantity}{sku ? ` · SKU ${sku}` : ''}{` · ${formatPrice(it.unitPrice)}`}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badge.cls}`}>{t(badge.key)}</span>
+          <p className="text-sm font-bold text-gray-900">{formatPrice(it.total)}</p>
+        </div>
+      </div>
+    );
+  };
   const handlePatch = async <T,>(
     label: typeof busy,
     fn: () => Promise<T>,
@@ -127,6 +187,7 @@ export default function AdminOrderDetailPage() {
   };
 
   const assignPicker = () => {
+    if (isCancelled) { setShowCancelledAssign(true); return; }
     if (!pickerId) return toast.error(t('admin.selectPicker'));
     handlePatch('picker',
       () => api.patch(`/orders/${order.id}/assign-picker`, { pickerId }),
@@ -134,12 +195,20 @@ export default function AdminOrderDetailPage() {
     );
   };
 
-  const assignDriver = () => {
-    if (!driverId) return toast.error(t('admin.selectDriver'));
+  const doAssignDriver = () => {
     handlePatch('driver',
       () => api.patch(`/orders/${order.id}/assign-driver`, { driverId }),
       t('admin.assignDriver')
     );
+  };
+
+  const assignDriver = () => {
+    if (isCancelled) { setShowCancelledAssign(true); return; }
+    if (!driverId) return toast.error(t('admin.selectDriver'));
+    // Delivery orders with replaced / unavailable items require explicit
+    // confirmation before a driver is dispatched.
+    if (hasModifiedItems) { setShowDriverWarn(true); return; }
+    doAssignDriver();
   };
 
   const updateStatus = () => {
@@ -370,30 +439,15 @@ export default function AdminOrderDetailPage() {
           {/* Items */}
           <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
             <p className="font-semibold text-gray-900 text-sm">{t('orders.items')} ({order.items.length})</p>
-            {order.items.map((item) => {
-              const productEntity = item.product ?? item.variant?.product ?? null;
-              const productName = item.productName
-                ? (locale === 'ar' && item.productNameAr ? item.productNameAr : item.productName)
-                : productEntity
-                  ? pickLocalized(productEntity, locale)
-                  : '—';
-              const sku = item.productSku ?? productEntity?.sku ?? item.variant?.sku ?? null;
-              const barcode = item.productBarcode ?? productEntity?.barcode ?? null;
+            {topLevelItems.map((item) => {
+              const replacement = item.replacedByItemId ? itemById.get(item.replacedByItemId) : null;
+              if (!replacement) return <div key={item.id}>{renderItemRow(item, 'plain')}</div>;
               return (
-                <div key={item.id} className="flex items-center gap-3">
-                  <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                    <ProductImage src={productEntity?.imageUrl ?? null} alt={productName} fill sizes="48px" className="object-cover" />
+                <div key={item.id} className="overflow-hidden rounded-xl border border-gray-100">
+                  <div className="p-3">{renderItemRow(item, 'original')}</div>
+                  <div className="border-t border-dashed border-violet-200 bg-violet-50/50 p-3">
+                    {renderItemRow(replacement, 'replacement')}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{productName}</p>
-                    <p className="text-xs text-gray-500 truncate">
-                      × {item.quantity}
-                      {sku ? ` · SKU ${sku}` : ''}
-                      {barcode ? ` · ${barcode}` : ''}
-                      {` · ${formatPrice(item.unitPrice)}`}
-                    </p>
-                  </div>
-                  <p className="text-sm font-bold text-gray-900 shrink-0">{formatPrice(item.total)}</p>
                 </div>
               );
             })}
@@ -429,7 +483,9 @@ export default function AdminOrderDetailPage() {
             {Number(order.discountTotal) > 0 && (
               <div className="flex justify-between text-green-600"><span>{t('cart.discount')}</span><span>-{formatPrice(order.discountTotal)}</span></div>
             )}
-            <div className="flex justify-between text-gray-600"><span>{t('cart.delivery')}</span><span>{formatPrice(order.deliveryFee)}</span></div>
+            {!isPickup && (
+              <div className="flex justify-between text-gray-600"><span>{t('cart.delivery')}</span><span>{formatPrice(order.deliveryFee)}</span></div>
+            )}
             <div className="flex justify-between border-t pt-2 font-bold text-gray-900">
               <span>{t('cart.total')}</span><span className="text-brand-600">{formatPrice(order.total)}</span>
             </div>
@@ -690,6 +746,63 @@ export default function AdminOrderDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Driver-assignment warning — order has replaced / unavailable items */}
+      {showDriverWarn && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowDriverWarn(false)} />
+          <div className="relative w-full max-w-sm space-y-3 rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              <h3 className="font-bold text-gray-900">{t('admin.driverWarnTitle')}</h3>
+            </div>
+            <p className="text-sm text-gray-600">{t('admin.driverWarnBody')}</p>
+            <ul className="max-h-40 space-y-1 overflow-y-auto text-xs">
+              {order.items
+                .filter((i) => i.status === 'REPLACED' || i.status === 'UNAVAILABLE')
+                .map((i) => (
+                  <li key={i.id} className="flex items-center justify-between gap-2 rounded bg-gray-50 px-2 py-1.5">
+                    <span className="truncate text-gray-700">{i.productName ?? '—'}</span>
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 font-semibold ${(ITEM_STATUS_BADGE[i.status as string] ?? ITEM_STATUS_BADGE.PENDING).cls}`}>
+                      {t((ITEM_STATUS_BADGE[i.status as string] ?? ITEM_STATUS_BADGE.PENDING).key)}
+                    </span>
+                  </li>
+                ))}
+            </ul>
+            <div className="flex gap-2 pt-1">
+              <Button variant="secondary" className="flex-1" onClick={() => setShowDriverWarn(false)}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                className="flex-1"
+                loading={busy === 'driver'}
+                onClick={() => { setShowDriverWarn(false); doAssignDriver(); }}
+              >
+                {t('common.confirm')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cancelled order — cannot assign until status is changed */}
+      {showCancelledAssign && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowCancelledAssign(false)} />
+          <div className="relative w-full max-w-sm space-y-3 rounded-2xl bg-white p-5 shadow-2xl">
+            <div className="flex items-center gap-2">
+              <XCircle className="h-5 w-5 text-red-500" />
+              <h3 className="font-bold text-gray-900">{t('admin.cancelledAssignTitle')}</h3>
+            </div>
+            <p className="text-sm text-gray-600">{t('admin.cancelledAssignBody')}</p>
+            <div className="pt-1">
+              <Button className="w-full" onClick={() => setShowCancelledAssign(false)}>
+                {t('common.close')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { Trash2, ShoppingBag, ArrowRight, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
+import { useCartItemNames } from '@/hooks/useCartItemNames';
 import { formatPrice } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { QuantityStepper } from '@/components/ui/QuantityStepper';
@@ -35,6 +36,7 @@ export default function CartPage() {
   const subtotal = useCartStore((s) => s.subtotal());
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
+  const nameFor = useCartItemNames(items);
 
   const { data: minOrder } = useSWR<MinimumOrder | null>(
     items.length > 0 ? '/delivery/minimum-order' : null,
@@ -79,14 +81,16 @@ export default function CartPage() {
       {/* Items */}
       <Card tone="default" shadow="soft" pad="none">
         <ul className="divide-y divide-gray-100">
-          {items.map((item) => (
+          {items.map((item) => {
+            const name = nameFor(item);
+            return (
             <li key={item.productId} className="flex gap-3 p-3">
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-gray-100">
-                <ProductImage src={item.productImage} alt={item.productName} fill sizes="64px" className="object-cover" />
+                <ProductImage src={item.productImage} alt={name} fill sizes="64px" className="object-cover" />
               </div>
               <div className="flex flex-1 flex-col gap-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">
-                  {item.productName}
+                  {name}
                 </p>
                 <div className="flex items-center justify-between mt-1">
                   <p className="font-bold text-brand-600">{formatPrice(Number(item.price) * item.quantity)}</p>
@@ -105,7 +109,8 @@ export default function CartPage() {
                 <Trash2 className="h-4 w-4" />
               </button>
             </li>
-          ))}
+            );
+          })}
         </ul>
       </Card>
 

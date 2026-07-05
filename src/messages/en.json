@@ -118,7 +118,6 @@
   "categories": {
     "title": "Categories",
     "allCategories": "All categories",
-    "title": "Categories",
     "discoverMore": "Discover more",
     "noCategories": "No categories yet",
     "subcategoriesLabel": "{count} subcategories"
@@ -454,7 +453,6 @@
     "beingPicked": "Being picked",
     "withDrivers": "With drivers",
     "outForDelivery": "Out for delivery",
-    "paymentReview": "Payment review",
     "bankTransfersPending": "Bank transfers pending",
     "ordersPlaced": "Orders placed",
     "ordersDelivered": "Orders delivered",
@@ -505,7 +503,16 @@
     "completedDeliveryToday": "Deliveries today",
     "readyForPickup": "Awaiting pickup",
     "pickupDriverBlocked": "Driver assignment is disabled for pickup orders.",
-    "switchToDeliveryFirst": "Change to delivery to assign a driver."
+    "switchToDeliveryFirst": "Change to delivery to assign a driver.",
+    "addArea": "Add service area",
+    "drawAreaHint": "Click on the map to place the corners of a service area, then press Finish. Add one area per city you deliver to.",
+    "drawAreaFirst": "Draw at least one service area first.",
+    "excludedOutsideAreas": "An excluded area must be drawn inside one of the service areas.",
+    "serviceAreas": "Service areas",
+    "areaN": "Area {n}",
+    "areaNameEn": "City name (EN)",
+    "areaNameAr": "City name (AR)",
+    "areaNeedsName": "Every service area needs a name."
   },
   "picker": {
     "title": "Picker portal",
@@ -625,5 +632,23 @@
     "saudiPhoneLen9": "If the number starts with 5, it must be 9 digits.",
     "minimumOrder": "Minimum order is {amount}",
     "outOfStock": "Out of stock"
+  },
+  "locationGate": {
+    "title": "Where should we deliver?",
+    "body": "Pick your location on the map to start shopping. We currently serve Riyadh Al Khabra, Bukayriyah and Al Khabra.",
+    "confirm": "Confirm this location",
+    "checking": "Checking your location…",
+    "dropPinFirst": "Move the pin to your location first.",
+    "outOfCoverageTitle": "We do not serve your location",
+    "outOfCoverageBody": "Your selected location is outside our service area. We currently deliver to Riyadh Al Khabra, Bukayriyah and Al Khabra.",
+    "tryAgain": "Choose another location",
+    "inCoverage": "Great — we deliver to {city}.",
+    "covered": "Your location is covered.",
+    "changeLocation": "Change location",
+    "cityLabel": "City",
+    "selectCity": "Select a city",
+    "streetLabel": "Street / area (optional)",
+    "streetPlaceholder": "District, street, building…",
+    "checkFailed": "Could not verify your location. Please try again."
   }
 }

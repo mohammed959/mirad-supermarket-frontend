@@ -10,10 +10,9 @@ import {
 import {
   Loader2,
   MapPin,
-  Pencil,
+  Plus,
   Ban,
   Trash2,
-  RotateCcw,
   Check,
   Undo2,
   X,
@@ -24,21 +23,22 @@ import {
   GOOGLE_MAPS_LIBRARIES,
   DEFAULT_MAP_CENTER,
 } from '@/lib/maps';
-import { LatLng, isPolygonInsidePolygon, isValidPolygon } from '@/lib/geo';
+import { LatLng, NamedArea, isPolygonInsidePolygon, isValidPolygon } from '@/lib/geo';
 
 interface Props {
   storeLat: number | null;
   storeLng: number | null;
-  mainPolygon: LatLng[] | null;
+  /** Named service areas (one per supported city). */
+  areas: NamedArea[];
   excludedPolygons: LatLng[][];
-  onChange: (next: { main: LatLng[] | null; excluded: LatLng[][] }) => void;
-  /** Surfaced validation problems (e.g. excluded drawn outside main). */
+  onChange: (next: { areas: NamedArea[]; excluded: LatLng[][] }) => void;
+  /** Surfaced validation problems (e.g. excluded drawn outside all areas). */
   onError?: (message: string) => void;
   language?: 'ar' | 'en';
   height?: number;
 }
 
-const MAIN_STYLE = {
+const AREA_STYLE = {
   fillColor: '#0fbea0',
   fillOpacity: 0.15,
   strokeColor: '#0fbea0',
@@ -58,12 +58,17 @@ function pathToCoords(poly: google.maps.Polygon): LatLng[] {
     .map((p) => ({ lat: p.lat(), lng: p.lng() }));
 }
 
-type DrawTarget = 'main' | 'excluded' | null;
+/** True when the ring sits inside at least one of the service areas. */
+function insideAnyArea(ring: LatLng[], areas: NamedArea[]): boolean {
+  return areas.some((a) => isValidPolygon(a.polygon) && isPolygonInsidePolygon(ring, a.polygon));
+}
+
+type DrawTarget = 'area' | 'excluded' | null;
 
 export function PolygonDrawerMap({
   storeLat,
   storeLng,
-  mainPolygon,
+  areas,
   excludedPolygons,
   onChange,
   onError,
@@ -79,7 +84,7 @@ export function PolygonDrawerMap({
   });
 
   const mapRef = useRef<google.maps.Map | null>(null);
-  const mainRef = useRef<google.maps.Polygon | null>(null);
+  const areaRefs = useRef<Array<google.maps.Polygon | null>>([]);
   const excludedRefs = useRef<Array<google.maps.Polygon | null>>([]);
   const [drawTarget, setDrawTarget] = useState<DrawTarget>(null);
   // Vertices collected while actively drawing a new polygon (click-to-draw,
@@ -92,16 +97,17 @@ export function PolygonDrawerMap({
       : DEFAULT_MAP_CENTER;
 
   // Read current geometry from live overlays (so in-place vertex edits are
-  // captured) and push it up.
+  // captured) and push it up. Names are preserved from props by index.
   const emit = useCallback(
-    (override?: { main?: LatLng[] | null; excluded?: LatLng[][] }) => {
-      const main =
-        override?.main !== undefined
-          ? override.main
-          : mainRef.current
-            ? pathToCoords(mainRef.current)
-            : mainPolygon;
-      const excluded =
+    (override?: { areas?: NamedArea[]; excluded?: LatLng[][] }) => {
+      const nextAreas =
+        override?.areas !== undefined
+          ? override.areas
+          : areas.map((a, i) => {
+              const ref = areaRefs.current[i];
+              return ref ? { ...a, polygon: pathToCoords(ref) } : a;
+            });
+      const nextExcluded =
         override?.excluded !== undefined
           ? override.excluded
           : excludedRefs.current.length
@@ -109,21 +115,21 @@ export function PolygonDrawerMap({
                 .filter((r): r is google.maps.Polygon => r != null)
                 .map(pathToCoords)
             : excludedPolygons;
-      onChange({ main: main ?? null, excluded });
+      onChange({ areas: nextAreas, excluded: nextExcluded });
     },
-    [mainPolygon, excludedPolygons, onChange],
+    [areas, excludedPolygons, onChange],
   );
 
   const startDrawing = useCallback(
     (target: Exclude<DrawTarget, null>) => {
-      if (target === 'excluded' && !isValidPolygon(mainPolygon)) {
-        onError?.(t('admin.drawMainFirst'));
+      if (target === 'excluded' && areas.length === 0) {
+        onError?.(t('admin.drawAreaFirst'));
         return;
       }
       setDraft([]);
       setDrawTarget(target);
     },
-    [mainPolygon, onError, t],
+    [areas.length, onError, t],
   );
 
   const cancelDrawing = useCallback(() => {
@@ -147,20 +153,12 @@ export function PolygonDrawerMap({
       return;
     }
 
-    if (drawTarget === 'main') {
-      // Re-drawing the main area invalidates excluded zones that may now fall
-      // outside it — keep only those still inside.
-      const keptExcluded = excludedPolygons.filter((ring) =>
-        isPolygonInsidePolygon(ring, coords),
-      );
-      emit({ main: coords, excluded: keptExcluded });
+    if (drawTarget === 'area') {
+      // Append a new, unnamed service area — the admin names it in the list.
+      emit({ areas: [...areas, { name: '', nameAr: '', polygon: coords }] });
     } else if (drawTarget === 'excluded') {
-      if (!isValidPolygon(mainPolygon)) {
-        onError?.(t('admin.drawMainFirst'));
-        return;
-      }
-      if (!isPolygonInsidePolygon(coords, mainPolygon)) {
-        onError?.(t('admin.excludedOutsideMain'));
+      if (!insideAnyArea(coords, areas)) {
+        onError?.(t('admin.excludedOutsideAreas'));
         return;
       }
       emit({ excluded: [...excludedPolygons, coords] });
@@ -168,11 +166,30 @@ export function PolygonDrawerMap({
 
     setDraft([]);
     setDrawTarget(null);
-  }, [draft, drawTarget, mainPolygon, excludedPolygons, emit, onError, t]);
+  }, [draft, drawTarget, areas, excludedPolygons, emit, onError, t]);
 
   const undoLastPoint = useCallback(() => {
     setDraft((d) => d.slice(0, -1));
   }, []);
+
+  const updateAreaName = useCallback(
+    (index: number, patch: Partial<Pick<NamedArea, 'name' | 'nameAr'>>) => {
+      const next = areas.map((a, i) => (i === index ? { ...a, ...patch } : a));
+      emit({ areas: next });
+    },
+    [areas, emit],
+  );
+
+  const deleteArea = useCallback(
+    (index: number) => {
+      const nextAreas = areas.filter((_, i) => i !== index);
+      areaRefs.current.splice(index, 1);
+      // Drop excluded rings that no longer sit inside any remaining area.
+      const nextExcluded = excludedPolygons.filter((ring) => insideAnyArea(ring, nextAreas));
+      emit({ areas: nextAreas, excluded: nextExcluded });
+    },
+    [areas, excludedPolygons, emit],
+  );
 
   const deleteExcluded = useCallback(
     (index: number) => {
@@ -182,12 +199,6 @@ export function PolygonDrawerMap({
     },
     [excludedPolygons, emit],
   );
-
-  const clearMain = useCallback(() => {
-    mainRef.current = null;
-    excludedRefs.current = [];
-    emit({ main: null, excluded: [] });
-  }, [emit]);
 
   if (!GOOGLE_MAPS_API_KEY) {
     return (
@@ -225,7 +236,7 @@ export function PolygonDrawerMap({
   }
 
   const isDrawing = drawTarget != null;
-  const draftStyle = drawTarget === 'excluded' ? EXCLUDED_STYLE : MAIN_STYLE;
+  const draftStyle = drawTarget === 'excluded' ? EXCLUDED_STYLE : AREA_STYLE;
 
   return (
     <div className="space-y-3">
@@ -266,39 +277,28 @@ export function PolygonDrawerMap({
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => startDrawing('main')}
+            onClick={() => startDrawing('area')}
             className="inline-flex items-center gap-1.5 rounded-xl bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100"
           >
-            <Pencil className="h-4 w-4" />
-            {mainPolygon ? t('admin.redrawDeliveryArea') : t('admin.drawDeliveryArea')}
+            <Plus className="h-4 w-4" />
+            {t('admin.addArea')}
           </button>
 
           <button
             type="button"
             onClick={() => startDrawing('excluded')}
-            disabled={!mainPolygon}
+            disabled={areas.length === 0}
             className="inline-flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
           >
             <Ban className="h-4 w-4" />
             {t('admin.addExcludedArea')}
           </button>
-
-          {mainPolygon && (
-            <button
-              type="button"
-              onClick={clearMain}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gray-100 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-200"
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t('admin.clearAreas')}
-            </button>
-          )}
         </div>
       )}
 
       {isDrawing && (
         <p className="text-xs font-medium text-gray-600">
-          {drawTarget === 'main' ? t('admin.drawMainHint') : t('admin.drawExcludedHint')}
+          {drawTarget === 'area' ? t('admin.drawAreaHint') : t('admin.drawExcludedHint')}
         </p>
       )}
 
@@ -309,7 +309,7 @@ export function PolygonDrawerMap({
         <GoogleMap
           mapContainerStyle={{ width: '100%', height: '100%' }}
           center={center}
-          zoom={storeLat != null && storeLng != null ? 13 : 11}
+          zoom={storeLat != null && storeLng != null ? 12 : 10}
           onLoad={(map) => {
             mapRef.current = map;
           }}
@@ -336,29 +336,33 @@ export function PolygonDrawerMap({
             />
           )}
 
-          {/* Main delivery polygon (editable when not drawing) */}
-          {isValidPolygon(mainPolygon) && (
-            <GMapPolygon
-              paths={mainPolygon}
-              editable={!isDrawing}
-              draggable={!isDrawing}
-              options={MAIN_STYLE}
-              onLoad={(poly) => {
-                mainRef.current = poly;
-              }}
-              onUnmount={() => {
-                mainRef.current = null;
-              }}
-              onMouseUp={() => emit()}
-              onDragEnd={() => emit()}
-            />
+          {/* Service areas (editable when not drawing) */}
+          {areas.map((area, i) =>
+            isValidPolygon(area.polygon) ? (
+              <GMapPolygon
+                // eslint-disable-next-line react/no-array-index-key
+                key={`area-${i}`}
+                paths={area.polygon}
+                editable={!isDrawing}
+                draggable={!isDrawing}
+                options={AREA_STYLE}
+                onLoad={(poly) => {
+                  areaRefs.current[i] = poly;
+                }}
+                onUnmount={() => {
+                  areaRefs.current[i] = null;
+                }}
+                onMouseUp={() => emit()}
+                onDragEnd={() => emit()}
+              />
+            ) : null,
           )}
 
           {/* Excluded polygons (editable when not drawing) */}
           {excludedPolygons.map((ring, i) => (
             <GMapPolygon
               // eslint-disable-next-line react/no-array-index-key
-              key={i}
+              key={`excluded-${i}`}
               paths={ring}
               editable={!isDrawing}
               draggable={!isDrawing}
@@ -407,7 +411,7 @@ export function PolygonDrawerMap({
         <div className="pointer-events-none absolute bottom-3 start-3 z-10 space-y-1 rounded-xl bg-white/90 px-3 py-2 text-[11px] font-medium text-gray-700 shadow-soft backdrop-blur">
           <div className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-brand-500/40 ring-1 ring-brand-500" />
-            {t('admin.mainDeliveryArea')}
+            {t('admin.serviceAreas')}
           </div>
           <div className="flex items-center gap-1.5">
             <span className="inline-block h-2.5 w-2.5 rounded-sm bg-red-500/40 ring-1 ring-red-500" />
@@ -419,6 +423,52 @@ export function PolygonDrawerMap({
           </div>
         </div>
       </div>
+
+      {/* Service areas list — name each city (EN + AR) */}
+      {areas.length > 0 && (
+        <ul className="space-y-2">
+          {areas.map((area, i) => (
+            <li
+              // eslint-disable-next-line react/no-array-index-key
+              key={i}
+              className="rounded-xl border border-gray-100 bg-white p-3 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-2 text-sm font-medium text-gray-700">
+                  <span className="inline-block h-2.5 w-2.5 rounded-sm bg-brand-500/40 ring-1 ring-brand-500" />
+                  {t('admin.areaN', { n: i + 1 })}
+                  <span className="text-[11px] font-normal text-gray-400">
+                    {t('admin.pointsCount', { count: area.polygon.length })}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => deleteArea(i)}
+                  className="inline-flex items-center gap-1 text-sm font-medium text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {t('common.delete')}
+                </button>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <input
+                  value={area.name}
+                  onChange={(e) => updateAreaName(i, { name: e.target.value })}
+                  placeholder={t('admin.areaNameEn')}
+                  className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                />
+                <input
+                  value={area.nameAr}
+                  onChange={(e) => updateAreaName(i, { nameAr: e.target.value })}
+                  placeholder={t('admin.areaNameAr')}
+                  dir="rtl"
+                  className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* Excluded areas list with delete */}
       {excludedPolygons.length > 0 && (

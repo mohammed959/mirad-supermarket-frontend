@@ -118,7 +118,6 @@
   "categories": {
     "title": "الأقسام",
     "allCategories": "جميع الأقسام",
-    "title": "الأقسام",
     "discoverMore": "اكتشف المزيد",
     "noCategories": "لا توجد أقسام بعد",
     "subcategoriesLabel": "{count} أقسام فرعية"
@@ -454,7 +453,6 @@
     "beingPicked": "جارٍ الانتقاء",
     "withDrivers": "مع السائقين",
     "outForDelivery": "في الطريق",
-    "paymentReview": "مراجعة الدفع",
     "bankTransfersPending": "تحويلات قيد المراجعة",
     "ordersPlaced": "طلبات منشأة",
     "ordersDelivered": "طلبات تم توصيلها",
@@ -505,7 +503,16 @@
     "completedDeliveryToday": "توصيلات اليوم",
     "readyForPickup": "بانتظار الاستلام",
     "pickupDriverBlocked": "تعيين السائق معطّل لطلبات الاستلام.",
-    "switchToDeliveryFirst": "حوّل الطلب إلى توصيل لتعيين سائق."
+    "switchToDeliveryFirst": "حوّل الطلب إلى توصيل لتعيين سائق.",
+    "addArea": "إضافة منطقة خدمة",
+    "drawAreaHint": "انقر على الخريطة لتحديد زوايا منطقة الخدمة ثم اضغط إنهاء. أضف منطقة واحدة لكل مدينة تخدمها.",
+    "drawAreaFirst": "ارسم منطقة خدمة واحدة على الأقل أولاً.",
+    "excludedOutsideAreas": "يجب رسم المنطقة المستثناة داخل إحدى مناطق الخدمة.",
+    "serviceAreas": "مناطق الخدمة",
+    "areaN": "منطقة {n}",
+    "areaNameEn": "اسم المدينة (بالإنجليزية)",
+    "areaNameAr": "اسم المدينة (بالعربية)",
+    "areaNeedsName": "كل منطقة خدمة تحتاج إلى اسم."
   },
   "picker": {
     "title": "بوابة المُجهز",
@@ -625,5 +632,23 @@
     "saudiPhoneLen9": "إذا بدأ الرقم بـ 5 فيجب أن يكون 9 أرقام.",
     "minimumOrder": "الحد الأدنى للطلب {amount}",
     "outOfStock": "نفد المخزون"
+  },
+  "locationGate": {
+    "title": "أين نوصّل طلبك؟",
+    "body": "اختر موقعك على الخريطة لبدء التسوق. نخدم حالياً رياض الخبراء والبكيرية والخبراء.",
+    "confirm": "تأكيد هذا الموقع",
+    "checking": "جارٍ التحقق من موقعك…",
+    "dropPinFirst": "حرّك الدبوس إلى موقعك أولاً.",
+    "outOfCoverageTitle": "لا نخدم موقعك",
+    "outOfCoverageBody": "الموقع الذي اخترته خارج نطاق الخدمة. نوصّل حالياً إلى رياض الخبراء والبكيرية والخبراء.",
+    "tryAgain": "اختر موقعاً آخر",
+    "inCoverage": "رائع — نوصّل إلى {city}.",
+    "covered": "موقعك مشمول بالتغطية.",
+    "changeLocation": "تغيير الموقع",
+    "cityLabel": "المدينة",
+    "selectCity": "اختر مدينة",
+    "streetLabel": "الشارع / الحي (اختياري)",
+    "streetPlaceholder": "الحي، الشارع، المبنى…",
+    "checkFailed": "تعذّر التحقق من موقعك. حاول مرة أخرى."
   }
 }

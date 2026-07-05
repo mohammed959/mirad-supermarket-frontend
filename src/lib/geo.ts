@@ -37,6 +37,23 @@ export function pointInAnyPolygon(point: LatLng, polygons: Polygon[]): boolean {
   return polygons.some((poly) => pointInPolygon(point, poly));
 }
 
+/** A named coverage/service area (one per supported city). Mirrors the
+ *  backend `NamedArea` shape. */
+export interface NamedArea {
+  name: string;
+  nameAr: string;
+  polygon: Polygon;
+}
+
+/** First area whose polygon contains `point`, or null when outside them all. */
+export function findContainingArea(
+  point: LatLng,
+  areas: NamedArea[] | null | undefined,
+): NamedArea | null {
+  if (!Array.isArray(areas)) return null;
+  return areas.find((a) => isValidPolygon(a?.polygon) && pointInPolygon(point, a.polygon)) ?? null;
+}
+
 /** Every vertex of `inner` must sit inside `outer`. */
 export function isPolygonInsidePolygon(inner: Polygon, outer: Polygon): boolean {
   return inner.every((vertex) => pointInPolygon(vertex, outer));

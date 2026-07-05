@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/Input';
 import { PageSpinner } from '@/components/ui/Spinner';
 import { LocationPickerMap } from '@/components/maps/LocationPickerMap';
 import { PolygonDrawerMap } from '@/components/maps/PolygonDrawerMap';
-import { LatLng } from '@/lib/geo';
+import { LatLng, NamedArea } from '@/lib/geo';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
@@ -27,7 +27,7 @@ interface BranchData {
     latitude: number;
     longitude: number;
     phone: string | null;
-    deliveryPolygon: LatLng[] | null;
+    deliveryAreas: NamedArea[] | null;
     excludedPolygons: LatLng[][] | null;
   } | null;
 }
@@ -109,8 +109,9 @@ export default function BranchCoveragePage() {
   const [address, setAddress] = useState('');
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState<{ lat: number; lng: number } | null>(null);
-  // Polygon-based delivery coverage (replaces the radius/maxDeliveryKm model).
-  const [mainPolygon, setMainPolygon] = useState<LatLng[] | null>(null);
+  // Polygon-based coverage: one named area per supported city. Replaces the
+  // former single delivery polygon and the radius/maxDeliveryKm model.
+  const [areas, setAreas] = useState<NamedArea[]>([]);
   const [excludedPolygons, setExcludedPolygons] = useState<LatLng[][]>([]);
   const [savingBranch, setSavingBranch] = useState(false);
 
@@ -136,7 +137,7 @@ export default function BranchCoveragePage() {
     setAddress(branchData.branch.address);
     setPhone(branchData.branch.phone ?? '');
     setPin({ lat: branchData.branch.latitude, lng: branchData.branch.longitude });
-    setMainPolygon(branchData.branch.deliveryPolygon ?? null);
+    setAreas(branchData.branch.deliveryAreas ?? []);
     setExcludedPolygons(branchData.branch.excludedPolygons ?? []);
   }, [branchData]);
 
@@ -194,6 +195,11 @@ export default function BranchCoveragePage() {
     if (!name.trim() || !nameAr.trim() || !address.trim()) {
       return toast.error(t('validation.required'));
     }
+    // Every drawn area must be named (backend rejects unnamed areas).
+    const validAreas = areas.filter((a) => a.polygon.length >= 3);
+    if (validAreas.some((a) => !a.name.trim() && !a.nameAr.trim())) {
+      return toast.error(t('admin.areaNeedsName'));
+    }
     setSavingBranch(true);
     try {
       await api.put('/delivery/branch', {
@@ -203,10 +209,16 @@ export default function BranchCoveragePage() {
         latitude: pin.lat,
         longitude: pin.lng,
         phone: phone.trim() || null,
-        // `null` clears the area; an array (>=3 pts) sets it. Excluded rings
-        // are only meaningful when a main area exists.
-        deliveryPolygon: mainPolygon && mainPolygon.length >= 3 ? mainPolygon : null,
-        excludedPolygons: mainPolygon && mainPolygon.length >= 3 ? excludedPolygons : [],
+        // Empty array clears coverage. Excluded rings are only meaningful when
+        // at least one service area exists.
+        deliveryAreas: validAreas.length
+          ? validAreas.map((a) => ({
+              name: a.name.trim(),
+              nameAr: a.nameAr.trim(),
+              polygon: a.polygon,
+            }))
+          : null,
+        excludedPolygons: validAreas.length ? excludedPolygons : [],
       });
       await mutateBranch();
       toast.success(t('admin.saveBranch'));
@@ -371,17 +383,17 @@ export default function BranchCoveragePage() {
           <PolygonDrawerMap
             storeLat={pin?.lat ?? null}
             storeLng={pin?.lng ?? null}
-            mainPolygon={mainPolygon}
+            areas={areas}
             excludedPolygons={excludedPolygons}
-            onChange={({ main, excluded }) => {
-              setMainPolygon(main);
+            onChange={({ areas: nextAreas, excluded }) => {
+              setAreas(nextAreas);
               setExcludedPolygons(excluded);
             }}
             onError={(msg) => toast.error(msg)}
             language={mapLang}
             height={420}
           />
-          {!mainPolygon && (
+          {areas.length === 0 && (
             <p className="flex items-center gap-1.5 text-xs font-medium text-amber-700">
               <AlertTriangle className="h-3.5 w-3.5" />
               {t('admin.noDeliveryAreaWarning')}

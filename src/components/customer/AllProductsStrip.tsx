@@ -2,7 +2,8 @@
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
-import { HomeSettings, Product } from '@/types';
+import { HomeAllProducts, HomeSettings, Product } from '@/types';
+import { aggregateCardToProduct } from '@/lib/homeAggregate';
 import { ProductCard } from './ProductCard';
 import { ProductCardSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -13,6 +14,21 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 // backend default in settings.service.ts.
 const DEFAULT_LIMIT = 20;
 
+interface AllProductsStripProps {
+  /**
+   * Pre-fetched aggregate slice (initial page of the "all products"
+   * strip). When provided BOTH internal SWR fetches — settings AND
+   * products — are skipped so aggregate mode never re-requests page 1.
+   *
+   * The strip itself has no follow-up pagination; deeper browsing is
+   * done through /product-list, which continues to use the legacy
+   * `useInfiniteProducts` hook unchanged.
+   */
+  allProducts?: HomeAllProducts;
+  /** Aggregate-mode loading flag (piped from useHomeAggregate). */
+  isLoading?: boolean;
+}
+
 /**
  * Homepage "All Products" section.
  *
@@ -22,20 +38,27 @@ const DEFAULT_LIMIT = 20;
  * half-cut fourth card hints there is more to scroll. Direction follows the
  * document `dir` (RTL/LTR) automatically — flex + overflow-x respect it.
  */
-export function AllProductsStrip() {
+export function AllProductsStrip({ allProducts, isLoading: loadingProp }: AllProductsStripProps = {}) {
   const t = useTranslations('products');
+  const useProps = allProducts !== undefined;
 
   // The configured count drives how many we fetch. Read it first; while it
   // resolves we fall back to the default so the strip isn't blocked on it.
-  const { data: home } = useSWR<HomeSettings>('/settings/home', fetcher);
-  const limit = home?.allProductsLimit ?? DEFAULT_LIMIT;
-
-  const { data, isLoading } = useSWR<{ products: Product[] }>(
-    `/products?page=1&pageSize=${limit}&excludeHiddenFromHome=true`,
+  const { data: home } = useSWR<HomeSettings>(
+    useProps ? null : '/settings/home',
     fetcher,
   );
+  const limit = home?.allProductsLimit ?? DEFAULT_LIMIT;
 
-  const products = data?.products ?? [];
+  const { data, isLoading: swrLoading } = useSWR<{ products: Product[] }>(
+    useProps ? null : `/products?page=1&pageSize=${limit}&excludeHiddenFromHome=true`,
+    fetcher,
+  );
+  const isLoading = useProps ? Boolean(loadingProp) : swrLoading;
+
+  const products: Product[] = useProps
+    ? allProducts!.items.map(aggregateCardToProduct)
+    : data?.products ?? [];
 
   return (
     <section className="space-y-3">

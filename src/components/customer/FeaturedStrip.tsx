@@ -2,17 +2,34 @@
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
-import { Product } from '@/types';
+import { HomeProductCard, Product } from '@/types';
+import { aggregateCardToProduct } from '@/lib/homeAggregate';
 import { ProductCard } from './ProductCard';
 import { ProductCardSkeleton } from '@/components/ui/Skeleton';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
-export function FeaturedStrip() {
-  const t = useTranslations('products');
-  const { data, isLoading } = useSWR<Product[]>('/products/featured', fetcher);
+interface FeaturedStripProps {
+  /** Pre-fetched aggregate cards; when set, the internal SWR fetch is skipped. */
+  featured?: HomeProductCard[];
+  /** Aggregate-mode loading flag (piped from useHomeAggregate). */
+  isLoading?: boolean;
+}
 
-  if (!isLoading && (!data || data.length === 0)) return null;
+export function FeaturedStrip({ featured, isLoading: loadingProp }: FeaturedStripProps = {}) {
+  const t = useTranslations('products');
+  const useProps = featured !== undefined;
+  const { data, isLoading: swrLoading } = useSWR<Product[]>(
+    useProps ? null : '/products/featured',
+    fetcher,
+  );
+  const isLoading = useProps ? Boolean(loadingProp) : swrLoading;
+
+  const products: Product[] = useProps
+    ? featured!.map(aggregateCardToProduct)
+    : data ?? [];
+
+  if (!isLoading && products.length === 0) return null;
 
   return (
     <section className="space-y-3">
@@ -27,7 +44,7 @@ export function FeaturedStrip() {
                 <ProductCardSkeleton />
               </div>
             ))
-          : data!.map((product) => (
+          : products.map((product) => (
               <div key={product.id} className="w-[28%] sm:w-[30%] md:w-[23%] lg:w-[18%] shrink-0 snap-start">
                 <ProductCard product={product} />
               </div>

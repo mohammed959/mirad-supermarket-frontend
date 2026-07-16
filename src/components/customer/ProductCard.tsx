@@ -39,9 +39,16 @@ export function ProductCard({ product }: ProductCardProps) {
 
   const displayName = pickLocalized(product, locale);
   const available = productAvailable(product);
-  const stock = product.stock ?? 0;
-  const reserved = product.reserved ?? 0;
-  const maxQty = Math.max(0, stock - reserved);
+  // Exact-inventory branch: only compute a client-side cap when BOTH
+  // `stock` and `reserved` are real numbers on the emitting endpoint.
+  // Aggregate-mode cards leave both `null` — pass `undefined` to
+  // `<QuantityStepper>` so no fabricated ceiling is exposed. The
+  // backend still enforces real stock at checkout.
+  const hasKnownStock =
+    typeof product.stock === 'number' && typeof product.reserved === 'number';
+  const maxQty = hasKnownStock
+    ? Math.max(0, (product.stock as number) - (product.reserved as number))
+    : undefined;
   // Cart is product-keyed end-to-end.
   const cartItem = items.find((i) => i.productId === product.id);
 

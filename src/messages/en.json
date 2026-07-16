@@ -650,5 +650,9 @@
     "streetLabel": "Street / area (optional)",
     "streetPlaceholder": "District, street, building…",
     "checkFailed": "Could not verify your location. Please try again."
+  },
+  "home": {
+    "loadError": "Something went wrong loading the homepage.",
+    "retry": "Try again"
   }
 }

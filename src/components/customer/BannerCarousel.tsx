@@ -4,14 +4,16 @@ import Image from 'next/image';
 import useSWR from 'swr';
 import { useRouter } from 'next/navigation';
 import api from '@/lib/api';
-import { Banner } from '@/types';
+import { Banner, HomeBanner } from '@/types';
 import { useLocale, pickLocalized } from '@/i18n/useLocale';
 import { BannerSkeleton } from '@/components/ui/Skeleton';
 import { cn } from '@/lib/utils';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
-function resolveBannerLink(b: Banner): string | null {
+type BannerLike = Pick<Banner, 'id' | 'title' | 'titleAr' | 'imageUrl' | 'linkType' | 'linkValue' | 'sortOrder'>;
+
+function resolveBannerLink(b: BannerLike): string | null {
   if (!b.linkType || !b.linkValue) return null;
   switch (b.linkType) {
     case 'category':    return `/product-list/${b.linkValue}`;
@@ -22,13 +24,33 @@ function resolveBannerLink(b: Banner): string | null {
   }
 }
 
-export function BannerCarousel() {
+interface BannerCarouselProps {
+  /**
+   * Optional pre-fetched banners (e.g. from the homepage aggregate).
+   * When provided the internal SWR fetch is skipped entirely so the
+   * aggregate mode produces zero duplicate HTTP requests.
+   */
+  banners?: HomeBanner[];
+  /**
+   * When strips render from aggregate props, they can't see SWR's
+   * `isLoading` — the caller passes it through so the skeleton still
+   * shows while the aggregate request is in flight.
+   */
+  isLoading?: boolean;
+}
+
+export function BannerCarousel({ banners: bannersProp, isLoading: loadingProp }: BannerCarouselProps = {}) {
   const router = useRouter();
   const locale = useLocale();
-  const { data, isLoading } = useSWR<Banner[]>('/banners', fetcher);
+  const useProps = bannersProp !== undefined;
+  const { data, isLoading: swrLoading } = useSWR<Banner[]>(
+    useProps ? null : '/banners',
+    fetcher,
+  );
+  const isLoading = useProps ? Boolean(loadingProp) : swrLoading;
   const [index, setIndex] = useState(0);
 
-  const banners = data ?? [];
+  const banners: BannerLike[] = useProps ? bannersProp! : data ?? [];
 
   // Auto-rotate every 5s
   useEffect(() => {

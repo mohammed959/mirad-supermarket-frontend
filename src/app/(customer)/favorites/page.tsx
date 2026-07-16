@@ -39,7 +39,7 @@ export default function FavoritesPage() {
   );
 
   const favorites = data ?? [];
-  const isInStock = (p: { isActive: boolean; available?: boolean; stock?: number; reserved?: number }) => {
+  const isInStock = (p: { isActive: boolean; available?: boolean; stock?: number | null; reserved?: number | null }) => {
     if (!p.isActive) return false;
     if (p.available != null) return p.available;
     return (p.stock ?? 0) - (p.reserved ?? 0) > 0;

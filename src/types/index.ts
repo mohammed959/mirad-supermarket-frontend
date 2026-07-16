@@ -83,8 +83,14 @@ export interface Product {
   sku: string | null;
   barcode: string | null;
   price: number | string | null;
-  stock: number;
-  reserved: number;
+  // `stock` / `reserved` are `null` when the emitting endpoint does not
+  // carry exact inventory (e.g. the storefront homepage aggregate, which
+  // only guarantees `available: boolean`). Every existing consumer uses
+  // `?? 0` on these fields, so widening to nullable is backward-safe;
+  // <ProductCard> uses the null signal to render an "unknown max"
+  // QuantityStepper instead of fabricating a client-side cap.
+  stock: number | null;
+  reserved: number | null;
   isFeatured: boolean;
   isActive: boolean;
   hideFromHome?: boolean;
@@ -376,4 +382,64 @@ export interface HomeSettings {
   // Number of products shown in the homepage "All Products" strip.
   allProductsLimit: number;
   updatedAt: string;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Storefront homepage aggregation (GET /api/storefront/home)
+//
+// These types mirror the backend wire contract EXACTLY. Do NOT reuse
+// the broad legacy `Product` type here — the aggregate returns only
+// what strips need to render (id/name/sku/imageUrl/price/available),
+// so mixing in `category`/`stock`/`variants`/`brand` would misrepresent
+// what's actually present on the wire.
+// ─────────────────────────────────────────────────────────────────
+
+export interface HomeProductCard {
+  id: string;
+  name: string;
+  nameAr: string;
+  sku: string | null;
+  imageUrl: string;
+  price: string | null;
+  available: boolean;
+}
+
+export interface HomeCategoryCard {
+  id: string;
+  name: string;
+  nameAr: string;
+  slug: string;
+  imageUrl: string;
+  sortOrder: number;
+}
+
+export interface HomeBanner {
+  id: string;
+  title: string;
+  titleAr: string;
+  imageUrl: string;
+  linkType: string | null;
+  linkValue: string | null;
+  sortOrder: number;
+}
+
+export interface HomeFeaturedSection {
+  id: string;
+  name: string;
+  nameAr: string;
+  sortOrder: number;
+  products: HomeProductCard[];
+}
+
+export interface HomeAllProducts {
+  items: HomeProductCard[];
+  hasMore: boolean;
+}
+
+export interface HomeAggregate {
+  categories: HomeCategoryCard[];
+  banners: HomeBanner[];
+  featuredProducts: HomeProductCard[];
+  featuredSections: HomeFeaturedSection[];
+  allProducts: HomeAllProducts;
 }

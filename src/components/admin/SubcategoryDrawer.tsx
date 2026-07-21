@@ -1,11 +1,12 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { X, Image as ImageIcon } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, ImagePlus, Loader2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { Category, Subcategory } from '@/types';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { CategoryImage } from '@/components/common/CategoryImage';
 
 const slugify = (text: string) =>
   text
@@ -14,6 +15,9 @@ const slugify = (text: string) =>
     .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-');
+
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5 MB
+const ACCEPTED_MIME = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
 
 interface Props {
   open: boolean;
@@ -31,22 +35,29 @@ export function SubcategoryDrawer({ open, onClose, onSaved, category, subcategor
   const [slugTouched, setSlugTouched] = useState(false);
   const [sortOrder, setSortOrder] = useState('0');
   const [isActive, setIsActive] = useState(true);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [imageTouched, setImageTouched] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
     setErrors({});
     setSlugTouched(false);
+    setImageTouched(false);
     if (subcategory) {
       setName(subcategory.name);
       setNameAr(subcategory.nameAr);
       setSlug(subcategory.slug);
       setSortOrder(String(subcategory.sortOrder ?? 0));
       setIsActive(subcategory.isActive);
+      setImageUrl(subcategory.imageUrl ?? null);
     } else {
       setName(''); setNameAr(''); setSlug('');
       setSortOrder('0'); setIsActive(true);
+      setImageUrl(null);
     }
   }, [open, subcategory]);
 
@@ -63,17 +74,60 @@ export function SubcategoryDrawer({ open, onClose, onSaved, category, subcategor
     return Object.keys(e).length === 0;
   };
 
+  const handleFilePick = async (files: FileList | null) => {
+    const file = files && files[0];
+    if (!file) return;
+    if (!ACCEPTED_MIME.includes(file.type)) {
+      toast.error('Only JPG, PNG or WEBP images are allowed.');
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      toast.error('Image must be 5 MB or smaller.');
+      return;
+    }
+    setUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post<{ data: { url: string } }>(
+        '/uploads/subcategory-image',
+        fd,
+        { headers: { 'Content-Type': 'multipart/form-data' } },
+      );
+      setImageUrl(res.data.data.url);
+      setImageTouched(true);
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Image upload failed');
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const removeImage = () => {
+    setImageUrl(null);
+    setImageTouched(true);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
   const handleSubmit = async () => {
     if (!validate()) return;
     setLoading(true);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: name.trim(),
         nameAr: nameAr.trim(),
         slug: slug.trim(),
         sortOrder: Number(sortOrder) || 0,
         ...(isEdit && { isActive }),
       };
+      // On create: send imageUrl only when one was uploaded.
+      // On edit: send imageUrl only if it was changed this session (may be null).
+      if (isEdit) {
+        if (imageTouched) payload.imageUrl = imageUrl;
+      } else if (imageUrl) {
+        payload.imageUrl = imageUrl;
+      }
       if (isEdit && subcategory) {
         await api.put(`/categories/${category.id}/subcategories/${subcategory.id}`, payload);
         toast.success('Subcategory updated');
@@ -131,13 +185,54 @@ export function SubcategoryDrawer({ open, onClose, onSaved, category, subcategor
             error={errors.slug}
           />
 
-          <div className="rounded-xl bg-brand-50 border border-brand-100 px-3 py-2.5 flex gap-2 items-start">
-            <ImageIcon className="h-4 w-4 text-brand-500 mt-0.5 shrink-0" />
-            <p className="text-xs text-brand-700 leading-relaxed">
-              Subcategory image is loaded from Bunny CDN using the slug as image filename.
-              Upload images to Bunny Storage as <span className="font-mono">category/&#123;slug&#125;.png</span>.
-              Missing images fall back to a default category image automatically.
-            </p>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-gray-700">Image (optional)</label>
+            <div className="flex items-start gap-3">
+              <div className="relative h-20 w-20 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden shrink-0">
+                {imageUrl ? (
+                  <CategoryImage src={imageUrl} alt="" fill sizes="80px" className="object-cover" />
+                ) : (
+                  <div className="h-full w-full flex items-center justify-center text-gray-300">
+                    <ImagePlus className="h-6 w-6" />
+                  </div>
+                )}
+              </div>
+
+              <div className="flex-1 space-y-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading || loading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-brand-300 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 transition-colors disabled:opacity-60"
+                  >
+                    {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ImagePlus className="h-3.5 w-3.5" />}
+                    {imageUrl ? 'Replace' : 'Upload'}
+                  </button>
+                  {imageUrl && !uploading && (
+                    <button
+                      type="button"
+                      onClick={removeImage}
+                      disabled={loading}
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition-colors disabled:opacity-60"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-500 leading-snug">
+                  JPG, PNG or WEBP · up to 5 MB. Leave empty to fall back to the default subcategory image.
+                </p>
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              hidden
+              onChange={(e) => handleFilePick(e.target.files)}
+            />
           </div>
 
           <Input
@@ -162,10 +257,10 @@ export function SubcategoryDrawer({ open, onClose, onSaved, category, subcategor
         </div>
 
         <div className="border-t bg-white px-5 py-4 flex gap-3 shrink-0">
-          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={loading}>
+          <Button variant="secondary" className="flex-1" onClick={onClose} disabled={loading || uploading}>
             Cancel
           </Button>
-          <Button className="flex-1" loading={loading} onClick={handleSubmit}>
+          <Button className="flex-1" loading={loading} disabled={uploading} onClick={handleSubmit}>
             {isEdit ? 'Save Changes' : 'Create Subcategory'}
           </Button>
         </div>

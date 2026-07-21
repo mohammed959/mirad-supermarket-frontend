@@ -404,6 +404,15 @@ export interface HomeProductCard {
   available: boolean;
 }
 
+export interface HomeSubcategoryCard {
+  id: string;
+  name: string;
+  nameAr: string;
+  slug: string;
+  imageUrl: string;
+  sortOrder: number;
+}
+
 export interface HomeCategoryCard {
   id: string;
   name: string;
@@ -411,6 +420,7 @@ export interface HomeCategoryCard {
   slug: string;
   imageUrl: string;
   sortOrder: number;
+  subCategories: HomeSubcategoryCard[];
 }
 
 export interface HomeBanner {

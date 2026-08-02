@@ -406,8 +406,8 @@ export interface HomeProductCard {
 
 export interface HomeSubcategoryCard {
   id: string;
+  /** Localized per POST body `lang` (`'ar' | 'en'`, default `'ar'`). */
   name: string;
-  nameAr: string;
   slug: string;
   imageUrl: string;
   sortOrder: number;
@@ -415,12 +415,78 @@ export interface HomeSubcategoryCard {
 
 export interface HomeCategoryCard {
   id: string;
+  /** Localized per POST body `lang` (`'ar' | 'en'`, default `'ar'`). */
   name: string;
-  nameAr: string;
   slug: string;
   imageUrl: string;
   sortOrder: number;
   subCategories: HomeSubcategoryCard[];
+}
+
+/**
+ * Slim marketplace category card returned by `POST /api/categories/list`.
+ * `name` is localized per the request `lang` (default `'ar'`).
+ */
+export interface MarketplaceCategory {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string;
+  sortOrder: number;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Marketplace product wire types (POST /api/products/*)
+//
+// Every text field is a SINGLE localized string picked per the request
+// `lang` (default `'ar'`). No `nameAr` / `descriptionAr` on the wire.
+// ─────────────────────────────────────────────────────────────────
+
+export interface MarketplaceCategoryLite {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface MarketplaceBrandLite {
+  id: string;
+  name: string;
+  slug: string;
+  imageUrl: string | null;
+}
+
+export interface MarketplaceProduct {
+  id: string;
+  name: string;
+  description: string | null;
+  sku: string | null;
+  barcode: string | null;
+  /** Decimal-string wire format (e.g. "6.5"); `null` for legacy products with no price. */
+  price: string | null;
+  stock: number;
+  reserved: number;
+  isActive: boolean;
+  isFeatured: boolean;
+  hideFromHome: boolean;
+  imageUrl: string | null;
+  categoryId: string;
+  subcategoryId: string | null;
+  brandId: string | null;
+  category: MarketplaceCategoryLite | null;
+  subcategory: MarketplaceCategoryLite | null;
+  brand: MarketplaceBrandLite | null;
+  createdAt: string;
+  updatedAt: string;
+  available: boolean;
+  offer: number;
+}
+
+export interface MarketplaceProductSuggestion {
+  id: string;
+  name: string;
+  sku: string | null;
+  imageUrl: string | null;
+  offer: number;
 }
 
 export interface HomeBanner {

@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
-import { Category } from '@/types';
+import { Category, MarketplaceCategory } from '@/types';
 import { useLocale, pickLocalized } from '@/i18n/useLocale';
 import { ProductCard } from '@/components/customer/ProductCard';
 import { CategorySideList } from '@/components/customer/CategorySideList';
@@ -12,12 +12,12 @@ import { CategoryNav } from '@/components/customer/CategoryNav';
 import { Button } from '@/components/ui/Button';
 import { ProductGridSkeleton, Skeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { useInfiniteProducts } from '@/hooks/useInfiniteProducts';
+import { useInfiniteMarketplaceProducts } from '@/hooks/useInfiniteMarketplaceProducts';
 import { LoadMoreSentinel } from '@/components/common/LoadMoreSentinel';
 
 const PAGE_SIZE = 20;
 
-const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
+const getFetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
 export default function ProductListPage() {
   const router = useRouter();
@@ -27,7 +27,42 @@ export default function ProductListPage() {
   const params = useSearchParams();
   const subParam = params.get('sub');
 
-  const { data: categories, isLoading: catsLoading } = useSWR<Category[]>('/categories', fetcher);
+  // Full list (stripped shape) for the sidebar / top nav. String SWR key
+  // (encodes `lang` as a query-string suffix so SSR + client hash identically);
+  // the actual request is still `POST /categories/list` with `{ lang }` body.
+  const { data: marketplaceCategories, isLoading: catsLoading } = useSWR<MarketplaceCategory[]>(
+    `/categories/list?lang=${locale}`,
+    () => api.post('/categories/list', { lang: locale }).then((r) => r.data.data),
+  );
+
+  // The active category — fetched separately so we get its `subcategories[]`
+  // (the stripped `/categories/list` no longer includes them).
+  const { data: activeCategoryFull } = useSWR<Category | null>(
+    categoryId ? `/categories/${categoryId}` : null,
+    getFetcher,
+  );
+
+  // Bridge stripped MarketplaceCategory → legacy Category so existing
+  // sidebar / nav components keep working. `nameAr` is set to the already-
+  // localized `name` so `pickLocalized` returns it under any locale.
+  // The active category's subcategories come from the per-category GET.
+  const categories: Category[] | undefined = useMemo(() => {
+    if (!marketplaceCategories) return undefined;
+    return marketplaceCategories.map((c) => ({
+      id: c.id,
+      name: c.name,
+      nameAr: c.name,
+      slug: c.slug,
+      imageUrl: c.imageUrl,
+      sortOrder: c.sortOrder,
+      isActive: true,
+      showOnHome: true,
+      subcategories:
+        c.id === categoryId && activeCategoryFull
+          ? activeCategoryFull.subcategories
+          : [],
+    }));
+  }, [marketplaceCategories, activeCategoryFull, categoryId]);
 
   const activeCategory = useMemo(
     () => categories?.find((c) => c.id === categoryId) ?? null,
@@ -38,8 +73,9 @@ export default function ProductListPage() {
     [activeCategory, subParam]
   );
 
-  // SWR-infinite rebuilds the cache when buildUrl returns a new string, so
-  // changing category or subcategory automatically resets to page 1.
+  // POST /products/list with { lang, categoryId, subcategoryId?, page, pageSize }.
+  // Cache-key suffix captures every field that varies the body, so changing
+  // category / subcategory / lang evicts the correct pages from cache.
   const {
     items: products,
     isLoading: productsLoading,
@@ -47,20 +83,22 @@ export default function ProductListPage() {
     hasMore,
     totalItems,
     loadMore,
-  } = useInfiniteProducts({
+  } = useInfiniteMarketplaceProducts({
+    url: '/products/list',
     pageSize: PAGE_SIZE,
-    buildUrl: (p) => {
-      const qs = new URLSearchParams({
-        page: String(p),
-        pageSize: String(PAGE_SIZE),
-        categoryId,
-        ...(subParam && { subcategoryId: subParam }),
-      });
-      return `/products?${qs}`;
-    },
+    cacheKeySuffix: `lang=${locale}&categoryId=${categoryId}&sub=${subParam ?? ''}&pageSize=${PAGE_SIZE}`,
+    buildBody: (p) => ({
+      lang: locale,
+      page: p,
+      pageSize: PAGE_SIZE,
+      categoryId,
+      ...(subParam && { subcategoryId: subParam }),
+    }),
   });
 
-  // If category id is invalid (loaded but not found), let the user pick
+  // If category id is invalid (loaded but not found), let the user pick.
+  // Uses the marketplace list as the source of truth for existence — a
+  // matching id there implies the category is public and active.
   if (!catsLoading && categories && !activeCategory) {
     return (
       <div className="space-y-4 py-12 text-center">

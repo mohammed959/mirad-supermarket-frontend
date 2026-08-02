@@ -8,29 +8,30 @@ import { useTranslations } from 'next-intl';
 import { motion } from 'framer-motion';
 import { ArrowLeft, Share2, Plus, Minus, ChevronRight, Heart } from 'lucide-react';
 import api from '@/lib/api';
-import { Product } from '@/types';
+import { MarketplaceProduct } from '@/types';
 import { useCartStore } from '@/stores/cartStore';
 import { useFavoritesStore } from '@/stores/favoritesStore';
 import { useCustomerAuthStore } from '@/stores/customerAuthStore';
-import { useLocale, pickLocalized } from '@/i18n/useLocale';
+import { useLocale } from '@/i18n/useLocale';
 import { formatPrice, cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/Skeleton';
 
-const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
-
-function productAvailable(p: Product): boolean {
+function productAvailable(p: MarketplaceProduct): boolean {
   if (p.available != null) return p.available;
   if (!p.isActive) return false;
-  const stock = p.stock ?? 0;
-  const reserved = p.reserved ?? 0;
-  return stock - reserved > 0;
+  return (p.stock ?? 0) - (p.reserved ?? 0) > 0;
 }
 
 export default function ProductDetailsPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const t = useTranslations();
   const locale = useLocale();
-  const { data: product, isLoading, error } = useSWR<Product>(`/products/${params.id}`, fetcher);
+  // POST /products/detail with { id, lang }. String SWR key encodes both so
+  // SSR + client hash identically and lang changes evict the cached detail.
+  const { data: product, isLoading, error } = useSWR<MarketplaceProduct>(
+    `/products/detail?id=${params.id}&lang=${locale}`,
+    () => api.post('/products/detail', { id: params.id, lang: locale }).then((r) => r.data.data),
+  );
 
   const items = useCartStore((s) => s.items);
   const addProduct = useCartStore((s) => s.addProduct);
@@ -62,12 +63,13 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
     );
   }
 
-  const productName = pickLocalized(product, locale);
-  const productAlt  = locale === 'ar' ? product.name : product.nameAr;
-  const description = locale === 'ar' ? product.descriptionAr : product.description;
-  const categoryName    = product.category ? pickLocalized(product.category, locale) : '';
-  const subcategoryName = product.subcategory ? pickLocalized(product.subcategory, locale) : '';
-  const brandName       = product.brand ? pickLocalized(product.brand, locale) : null;
+  // MarketplaceProduct returns a single localized `name` / `description`
+  // per the request `lang`; there is no opposite-language subtitle anymore.
+  const productName = product.name;
+  const description = product.description;
+  const categoryName    = product.category?.name ?? '';
+  const subcategoryName = product.subcategory?.name ?? '';
+  const brandName       = product.brand?.name ?? null;
 
   const cartItem = items.find((i) => i.productId === product.id);
   const available = productAvailable(product);
@@ -130,7 +132,7 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
               <>
                 <ChevronRight className="h-3 w-3 text-gray-300 shrink-0 rtl:rotate-180" />
                 <li>
-                  <Link href={`/product-list/${product.category.id}`} className="hover:text-gray-700 truncate">
+                  <Link href={`/product-list/${product.categoryId}`} className="hover:text-gray-700 truncate">
                     {categoryName}
                   </Link>
                 </li>
@@ -141,7 +143,7 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
                 <ChevronRight className="h-3 w-3 text-gray-300 shrink-0 rtl:rotate-180" />
                 <li>
                   <Link
-                    href={`/product-list/${product.category.id}?sub=${product.subcategory!.id}`}
+                    href={`/product-list/${product.categoryId}?sub=${product.subcategoryId ?? ''}`}
                     className="hover:text-gray-700 truncate font-semibold text-gray-700"
                   >
                     {subcategoryName}
@@ -197,11 +199,6 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
               <h1 className="text-xl sm:text-2xl font-black text-gray-900 leading-tight">
                 {productName}
               </h1>
-              {productAlt && (
-                <p className="mt-1 text-xs text-gray-400 truncate" dir={locale === 'ar' ? 'ltr' : 'rtl'}>
-                  {productAlt}
-                </p>
-              )}
             </div>
 
             <div className="flex items-baseline gap-1.5">
@@ -213,7 +210,7 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
             <div className="mt-1">
               <p className="text-[10px] uppercase tracking-wider text-gray-400">Found in</p>
               <Link
-                href={`/product-list/${product.category.id}`}
+                href={`/product-list/${product.categoryId}`}
                 className="text-sm text-gray-500 hover:text-gray-700 transition-colors"
               >
                 {categoryName}{subcategoryName ? ` · ${subcategoryName}` : ''}

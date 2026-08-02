@@ -65,7 +65,7 @@ export function PromotionDrawer({ open, onClose, onSaved, promotion }: Props) {
   const [categoryIds, setCategoryIds] = useState<Set<string>>(new Set());
   const [productQuery, setProductQuery] = useState('');
 
-  const { data: categories } = useSWR<Category[]>(open ? '/categories?all=true' : null, fetcher);
+  const { data: categories } = useSWR<Category[]>(open ? '/categories/admin?all=true' : null, fetcher);
   const { data: products } = useSWR<{ products: Product[] }>(
     open && targetScope === 'PRODUCT' && productQuery.length >= 2
       ? `/products?all=true&includeOutOfStock=true&q=${encodeURIComponent(productQuery)}&limit=20`

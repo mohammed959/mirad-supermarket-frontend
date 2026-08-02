@@ -1,6 +1,21 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { CartItem, Product } from '@/types';
+import { CartItem } from '@/types';
+
+/**
+ * Minimal shape `addProduct` needs. Any of the marketplace product types
+ * (`Product`, `MarketplaceProduct`, `HomeProductCard`) satisfy this — the
+ * cart stores the fields it uses via `addItem` and drops everything else.
+ * `nameAr` is optional; missing → the localized `name` is stored twice so
+ * downstream renderers with a locale fallback still work.
+ */
+export interface AddableProduct {
+  id: string;
+  name: string;
+  nameAr?: string | null;
+  imageUrl: string | null;
+  price: string | number | null;
+}
 import api from '@/lib/api';
 
 interface DeliveryFeeResult {
@@ -20,7 +35,7 @@ interface CartState {
    * Phase 6: the only marketplace add-to-basket entry point. Reads
    * product-level price; tracks the basket line under `productId`.
    */
-  addProduct: (product: Product) => void;
+  addProduct: (product: AddableProduct) => void;
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -67,7 +82,10 @@ export const useCartStore = create<CartState>()(
         get().addItem({
           productId: product.id,
           productName: product.name,
-          productNameAr: product.nameAr,
+          // MarketplaceProduct drops `nameAr` from the wire — the localized
+          // `name` already reflects the current lang, so falling back to it
+          // keeps downstream renderers with a locale fallback working.
+          productNameAr: product.nameAr ?? product.name,
           productImage: product.imageUrl,
           price: Number(product.price ?? 0),
         });

@@ -46,7 +46,7 @@ export function ProductDrawer({ open, onClose, onSaved, product }: Props) {
   useEffect(() => {
     if (!open) return;
     if (categories.length === 0) {
-      api.get('/categories?all=true').then((r) => setCategories(r.data.data)).catch(() => {});
+      api.get('/categories/admin?all=true').then((r) => setCategories(r.data.data)).catch(() => {});
     }
     if (brands.length === 0) {
       api.get('/brands').then((r) => setBrands(r.data.data)).catch(() => {});

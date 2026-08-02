@@ -90,7 +90,10 @@ describe('Envelope unwrap contract (fetcher never double-unwraps)', () => {
 describe('Aggregate hook / flag wiring', () => {
   test('useHomeAggregate passes null SWR key when the flag is off', () => {
     const src = read('src/hooks/useHomeAggregate.ts');
-    assert.match(src, /USE_HOME_AGGREGATE\s*\?\s*HOME_AGGREGATE_SWR_KEY\s*:\s*null/);
+    // Now scoped by locale — key is `homeAggregateSwrKey(locale)` when the
+    // flag is on, else null. `HOME_AGGREGATE_SWR_KEY` is still exported for
+    // diagnostics; the runtime key uses the helper.
+    assert.match(src, /USE_HOME_AGGREGATE\s*\?\s*homeAggregateSwrKey\(locale\)\s*:\s*null/);
   });
 
   test('flag parser is imported from lib/flags, not re-derived inline', () => {
@@ -117,12 +120,15 @@ describe('HomePage branching (single hook set per render)', () => {
     assert.equal(matches.length, 2);
   });
 
-  test('Legacy /categories?home=true fetch appears ONLY inside LegacyHome', () => {
-    const catFetches = src.match(/\/categories\?home=true/g) ?? [];
-    assert.equal(catFetches.length, 1);
-    // And AggregateHome does NOT contain that legacy path.
+  test('LegacyHome fetches categories via POST /categories/list, not the removed public GET', () => {
+    // The old GET /api/categories?home=true endpoint no longer exists.
+    // LegacyHome uses the new marketplace endpoint with a { lang } body.
+    const legacyBody = src.slice(src.indexOf('function LegacyHome'), src.indexOf('function AggregateHome'));
+    assert.match(legacyBody, /\/categories\/list/);
+    assert.equal(/\/categories\?home=true/.test(src), false, 'the removed public list must not be referenced anywhere');
+    // AggregateHome does NOT call /categories/list — it consumes data.categories via props.
     const aggregateBody = src.slice(src.indexOf('function AggregateHome'), src.indexOf('export default'));
-    assert.equal(/\/categories\?home=true/.test(aggregateBody), false);
+    assert.equal(/\/categories\/list/.test(aggregateBody), false);
   });
 });
 

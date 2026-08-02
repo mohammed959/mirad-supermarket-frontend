@@ -3,7 +3,7 @@ import useSWR from 'swr';
 import { useTranslations } from 'next-intl';
 import { AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
-import { Category } from '@/types';
+import { Category, MarketplaceCategory } from '@/types';
 import { HomeCategoriesRow } from '@/components/customer/HomeCategoriesRow';
 import { BannerCarousel } from '@/components/customer/BannerCarousel';
 import { FeaturedStrip } from '@/components/customer/FeaturedStrip';
@@ -14,8 +14,28 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { Button } from '@/components/ui/Button';
 import { USE_HOME_AGGREGATE } from '@/lib/flags';
 import { useHomeAggregate } from '@/hooks/useHomeAggregate';
+import { useLocale } from '@/i18n/useLocale';
 
-const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
+/**
+ * Bridge a `MarketplaceCategory` (localized `name`, no subcategories) to the
+ * legacy `Category` shape that `HomeCategoriesRow` / `CategoryGrid` still
+ * consume. `nameAr` is set to `name` so `pickLocalized` returns the already-
+ * localized value regardless of the active locale.
+ */
+function bridgeMarketplaceCategory(c: MarketplaceCategory): Category {
+  return {
+    id: c.id,
+    name: c.name,
+    nameAr: c.name,
+    slug: c.slug,
+    imageUrl: c.imageUrl,
+    sortOrder: c.sortOrder,
+    isActive: true,
+    showOnHome: true,
+    subcategories: [],
+  };
+}
+
 
 /**
  * Legacy homepage — each strip owns its own SWR fetch. Preserved
@@ -23,12 +43,16 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
  * pre-aggregation behavior.
  */
 function LegacyHome() {
-  const { data: categoriesData, isLoading: catsLoading } = useSWR<Category[]>(
-    '/categories?home=true',
-    fetcher,
+  const locale = useLocale();
+  // String SWR key (encodes `lang` as a query-string suffix so SSR + client
+  // hash identically); the actual request is `POST /categories/list` with a
+  // `{ lang }` body (backend defaults to `"ar"` when the body is missing).
+  const { data: categoriesData, isLoading: catsLoading } = useSWR<MarketplaceCategory[]>(
+    `/categories/list?lang=${locale}`,
+    () => api.post('/categories/list', { lang: locale }).then((r) => r.data.data),
   );
 
-  const categories = categoriesData ?? [];
+  const categories = (categoriesData ?? []).map(bridgeMarketplaceCategory);
 
   return (
     <div className="space-y-5">
@@ -93,7 +117,7 @@ function AggregateHome() {
   const categories = (data?.categories ?? []).map((c) => ({
     id: c.id,
     name: c.name,
-    nameAr: c.nameAr,
+    nameAr: c.name,
     slug: c.slug,
     imageUrl: c.imageUrl,
     sortOrder: c.sortOrder,

@@ -20,7 +20,7 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 export default function AdminCategoriesPage() {
   const t = useTranslations();
   const locale = useLocale();
-  const { data, isLoading, mutate } = useSWR<Category[]>('/categories?all=true', fetcher);
+  const { data, isLoading, mutate } = useSWR<Category[]>('/categories/admin?all=true', fetcher);
 
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [showImport, setShowImport] = useState(false);

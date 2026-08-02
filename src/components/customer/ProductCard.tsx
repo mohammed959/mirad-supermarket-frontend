@@ -4,20 +4,41 @@ import { ProductImage } from '@/components/common/ProductImage';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { motion } from 'framer-motion';
-import { Product } from '@/types';
 import { useCartStore } from '@/stores/cartStore';
 import { useLocale, pickLocalized } from '@/i18n/useLocale';
+import type { Locale } from '@/i18n/config';
 import { formatPrice, cn } from '@/lib/utils';
 import { FavoriteButton } from './FavoriteButton';
 import { QuantityStepper } from '@/components/ui/QuantityStepper';
 
-interface ProductCardProps {
-  product: Product;
+/**
+ * Minimal shape ProductCard needs. Accepts:
+ *   - `Product` (bilingual, admin/favorites/buy-again)
+ *   - `MarketplaceProduct` (localized, POST /products/* endpoints)
+ *   - `HomeProductCard` (localized-ish, storefront home aggregate)
+ * `nameAr`, `isActive`, `stock`, `reserved` are optional — components that
+ * don't provide them just fall back to `available` for the availability
+ * check and don't render a client-side stock cap.
+ */
+export interface ProductCardProduct {
+  id: string;
+  name: string;
+  nameAr?: string | null;
+  imageUrl: string | null;
+  price: string | number | null;
+  available?: boolean;
+  isActive?: boolean;
+  stock?: number | null;
+  reserved?: number | null;
 }
 
-function productAvailable(p: Product): boolean {
+interface ProductCardProps {
+  product: ProductCardProduct;
+}
+
+function productAvailable(p: ProductCardProduct): boolean {
   if (p.available != null) return p.available;
-  if (!p.isActive) return false;
+  if (p.isActive === false) return false;
   const stock = p.stock ?? 0;
   const reserved = p.reserved ?? 0;
   return stock - reserved > 0;
@@ -37,7 +58,12 @@ export function ProductCard({ product }: ProductCardProps) {
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const openDetail = () => router.push(`/product-details/${product.id}`);
 
-  const displayName = pickLocalized(product, locale);
+  // Normalize `nameAr: null` (MarketplaceProduct) to `undefined` so
+  // `pickLocalized`'s generic constraint accepts the union.
+  const displayName = pickLocalized(
+    { name: product.name, nameAr: product.nameAr ?? undefined },
+    locale as Locale,
+  );
   const available = productAvailable(product);
   // Exact-inventory branch: only compute a client-side cap when BOTH
   // `stock` and `reserved` are real numbers on the emitting endpoint.

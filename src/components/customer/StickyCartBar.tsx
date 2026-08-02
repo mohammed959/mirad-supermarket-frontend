@@ -1,5 +1,5 @@
 'use client';
-import { ShoppingCart, ChevronRight } from 'lucide-react';
+import { ShoppingCart } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { AnimatePresence, motion } from 'framer-motion';
 import { usePathname, useRouter } from 'next/navigation';
@@ -32,26 +32,31 @@ export function StickyCartBar() {
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: 80, opacity: 0 }}
           transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-          className="md:hidden fixed inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] z-sticky pointer-events-none"
+          className="md:hidden fixed inset-x-4 bottom-20 z-sticky pointer-events-none"
         >
           <motion.button
-            whileTap={{ scale: 0.98 }}
+            whileTap={{ scale: 0.97 }}
             onClick={goToCart}
-            className="pointer-events-auto flex w-full items-center gap-2.5 rounded-full bg-brand-500 ps-2 pe-4 py-2 text-white shadow-pop hover:bg-brand-600 transition-colors"
+            className="pointer-events-auto flex w-full items-center gap-3 rounded-3xl bg-brand-500 px-4 py-3 text-white shadow-pop hover:bg-brand-600 transition-colors"
           >
-            <span className="flex items-center gap-1.5 rounded-full bg-white/15 ps-2 pe-3 py-1.5">
-              <ShoppingCart className="h-4 w-4 text-white" />
-              <span className="text-sm font-bold leading-none tabular-nums">{itemCount}</span>
-            </span>
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-2xl bg-white">
+              <ShoppingCart className="h-5 w-5 text-brand-600" />
+              <span className="absolute -end-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gray-900 px-1 text-xs font-bold text-white">
+                {itemCount > 9 ? '9+' : itemCount}
+              </span>
+            </div>
 
-            <span className="flex-1 text-start text-sm font-bold leading-tight truncate tabular-nums">
-              {formatPrice(subtotal)}
-            </span>
+            <div className="flex-1 text-start">
+              <p className="text-xs opacity-90 leading-tight">{itemCount} {itemCount === 1 ? t('item') : t('items')}</p>
+              <p className="text-sm font-bold leading-tight">{t('viewCart')}</p>
+            </div>
 
-            <span className="flex items-center gap-1 text-sm font-bold">
-              {t('viewCart')}
-              <ChevronRight className="h-4 w-4 rtl:rotate-180" />
-            </span>
+            <div className="flex items-center gap-2">
+              <p className="text-base font-bold">{formatPrice(subtotal)}</p>
+              <div className="flex h-8 items-center justify-center rounded-full bg-white/15 px-3 py-1 text-sm font-bold">
+                {t('cart.checkoutShort') ?? t('viewCart')}
+              </div>
+            </div>
           </motion.button>
         </motion.div>
       )}

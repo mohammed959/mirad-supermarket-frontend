@@ -6,18 +6,21 @@ import { ProductImage } from '@/components/common/ProductImage';
 import { useTranslations } from 'next-intl';
 import { ArrowLeft, Search as SearchIcon, X, Clock, ScanBarcode } from 'lucide-react';
 import api from '@/lib/api';
-import { Product, SearchResult } from '@/types';
+import { MarketplaceProduct, MarketplaceProductSuggestion } from '@/types';
 import { useSearchStore } from '@/stores/searchStore';
-import { useLocale, pickLocalized } from '@/i18n/useLocale';
+import { useLocale } from '@/i18n/useLocale';
 import { ProductCard } from '@/components/customer/ProductCard';
 import { ProductGridSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { useInfiniteProducts } from '@/hooks/useInfiniteProducts';
+import { useInfiniteMarketplaceProducts } from '@/hooks/useInfiniteMarketplaceProducts';
 import { LoadMoreSentinel } from '@/components/common/LoadMoreSentinel';
 
 const SEARCH_PAGE_SIZE = 20;
 
-const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
+interface BarcodeResult {
+  products: MarketplaceProduct[];
+  matchedProductId: string | null;
+}
 
 function isLikelyBarcode(q: string): boolean {
   const trimmed = q.trim();
@@ -55,16 +58,25 @@ export default function SearchPage() {
   const barcodeMode = trimmedQuery.length > 0 && isLikelyBarcode(trimmedQuery);
   const textMode = trimmedQuery.length > 0 && !barcodeMode;
 
-  // Barcode mode: single exact lookup, no pagination.
+  // Barcode mode: single exact POST lookup, no pagination.
   const barcodeKey = barcodeMode
-    ? `/products/search?barcode=${encodeURIComponent(trimmedQuery)}`
+    ? `/products/search?mode=barcode&lang=${locale}&q=${encodeURIComponent(trimmedQuery)}`
     : null;
-  const { data: barcodeResults, isLoading: barcodeSearching } = useSWR<SearchResult>(
+  const { data: barcodeResults, isLoading: barcodeSearching } = useSWR<BarcodeResult>(
     barcodeKey,
-    fetcher,
+    () =>
+      api
+        .post('/products/search', {
+          q: trimmedQuery,
+          barcode: trimmedQuery,
+          lang: locale,
+          page: 1,
+          pageSize: 1,
+        })
+        .then((r) => r.data.data),
   );
 
-  // Text mode: server-side paginated infinite scroll.
+  // Text mode: server-side paginated infinite scroll via POST /products/search.
   const {
     items: textResults,
     isLoading: textSearching,
@@ -72,21 +84,26 @@ export default function SearchPage() {
     hasMore: textHasMore,
     totalItems: textTotalItems,
     loadMore: loadMoreText,
-  } = useInfiniteProducts({
+  } = useInfiniteMarketplaceProducts({
+    url: '/products/search',
     pageSize: SEARCH_PAGE_SIZE,
-    buildUrl: (p) =>
+    cacheKeySuffix: `lang=${locale}&q=${encodeURIComponent(trimmedQuery)}&pageSize=${SEARCH_PAGE_SIZE}&mode=${textMode ? 'text' : 'idle'}`,
+    buildBody: (p) =>
       textMode
-        ? `/products/search?q=${encodeURIComponent(trimmedQuery)}&page=${p}&pageSize=${SEARCH_PAGE_SIZE}`
+        ? { q: trimmedQuery, lang: locale, page: p, pageSize: SEARCH_PAGE_SIZE }
         : null,
   });
 
   const suggestionsKey = useMemo(() => {
     if (!textMode || trimmedQuery.length < 2) return null;
-    return `/products/search/suggestions?q=${encodeURIComponent(trimmedQuery)}`;
-  }, [textMode, trimmedQuery]);
-  const { data: suggestions } = useSWR<Pick<Product, 'id' | 'name' | 'nameAr' | 'imageUrl'>[]>(
+    return `/products/search/suggestions?lang=${locale}&q=${encodeURIComponent(trimmedQuery)}`;
+  }, [textMode, trimmedQuery, locale]);
+  const { data: suggestions } = useSWR<MarketplaceProductSuggestion[]>(
     suggestionsKey,
-    fetcher
+    () =>
+      api
+        .post('/products/search/suggestions', { q: trimmedQuery, lang: locale })
+        .then((r) => r.data.data),
   );
 
   const hasQuery = trimmedQuery.length > 0;
@@ -192,29 +209,22 @@ export default function SearchPage() {
           <section className="space-y-1.5">
             <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{t('common.search')}</p>
             <ul className="divide-y divide-gray-50 rounded-2xl border border-gray-100 bg-white">
-              {suggestions.map((s) => {
-                const name = pickLocalized(s, locale);
-                const alt = locale === 'ar' ? s.name : s.nameAr;
-                return (
-                  <li key={s.id}>
-                    <button
-                      type="button"
-                      onClick={() => router.push(`/product-details/${s.id}`)}
-                      className="flex w-full items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors"
-                    >
-                      <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
-                        <ProductImage src={s.imageUrl} alt={name} fill sizes="36px" className="object-cover" />
-                      </div>
-                      <div className="flex-1 text-start min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{name}</p>
-                        {alt && (
-                          <p className="text-xs text-gray-400 truncate" dir={locale === 'ar' ? 'ltr' : 'rtl'}>{alt}</p>
-                        )}
-                      </div>
-                    </button>
-                  </li>
-                );
-              })}
+              {suggestions.map((s) => (
+                <li key={s.id}>
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/product-details/${s.id}`)}
+                    className="flex w-full items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
+                      <ProductImage src={s.imageUrl} alt={s.name} fill sizes="36px" className="object-cover" />
+                    </div>
+                    <div className="flex-1 text-start min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>
+                    </div>
+                  </button>
+                </li>
+              ))}
             </ul>
           </section>
         )}

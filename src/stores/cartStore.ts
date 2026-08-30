@@ -24,6 +24,18 @@ interface DeliveryFeeResult {
   reason: string;
 }
 
+interface ServerCartItem {
+  itemId: string;
+  productId: string;
+  name: string;
+  sku: string | null;
+  imageUrl: string | null;
+  price: number;
+  quantity: number;
+  subtotal: number;
+  available: boolean;
+}
+
 interface CartState {
   items: CartItem[];
   deliveryFee: number;
@@ -32,13 +44,20 @@ interface CartState {
 
   addItem: (item: Omit<CartItem, 'quantity'>) => void;
   /**
-   * Phase 6: the only marketplace add-to-basket entry point. Reads
-   * product-level price; tracks the basket line under `productId`.
+   * The only marketplace add-to-basket entry point. Reads product-level
+   * price; tracks the basket line under `productId`. The cart is
+   * customer-only server-side — this optimistically updates the local
+   * basket and pushes the same increment to `POST /cart/items`, rolling
+   * back on failure (e.g. insufficient stock). Callers must confirm the
+   * shopper is authenticated before calling this — the store does not
+   * gate on auth itself.
    */
-  addProduct: (product: AddableProduct) => void;
-  removeItem: (productId: string) => void;
-  updateQuantity: (productId: string, quantity: number) => void;
+  addProduct: (product: AddableProduct) => Promise<void>;
+  removeItem: (productId: string) => Promise<void>;
+  updateQuantity: (productId: string, quantity: number) => Promise<void>;
   clearCart: () => void;
+  /** Wipe the local basket only — no server call. Used on logout. */
+  resetCart: () => void;
   openCart: () => void;
   closeCart: () => void;
 
@@ -50,6 +69,17 @@ interface CartState {
   total: () => number;
 
   fetchDeliveryFee: (lat?: number, lng?: number) => Promise<void>;
+}
+
+function toCartItem(row: ServerCartItem): CartItem {
+  return {
+    productId: row.productId,
+    productName: row.name,
+    productNameAr: row.name,
+    productImage: row.imageUrl,
+    price: row.price,
+    quantity: row.quantity,
+  };
 }
 
 export const useCartStore = create<CartState>()(
@@ -78,7 +108,7 @@ export const useCartStore = create<CartState>()(
         }
       },
 
-      addProduct: (product) => {
+      addProduct: async (product) => {
         get().addItem({
           productId: product.id,
           productName: product.name,
@@ -89,25 +119,84 @@ export const useCartStore = create<CartState>()(
           productImage: product.imageUrl,
           price: Number(product.price ?? 0),
         });
+        try {
+          await api.post('/cart/items', {
+            productId: product.id,
+            quantity: 1,
+            action: 'increment',
+          });
+        } catch (err) {
+          // Roll back the optimistic add (e.g. out of stock server-side).
+          const items = get().items;
+          const existing = items.find((i) => i.productId === product.id);
+          if (existing && existing.quantity <= 1) {
+            set({ items: items.filter((i) => i.productId !== product.id) });
+          } else if (existing) {
+            set({
+              items: items.map((i) =>
+                i.productId === product.id ? { ...i, quantity: i.quantity - 1 } : i
+              ),
+            });
+          }
+          throw err;
+        }
       },
 
-      removeItem: (productId) => {
-        set({ items: get().items.filter((i) => i.productId !== productId) });
+      removeItem: async (productId) => {
+        const items = get().items;
+        const removed = items.find((i) => i.productId === productId);
+        set({ items: items.filter((i) => i.productId !== productId) });
+        if (!removed) return;
+        try {
+          await api.delete(`/cart/items/${productId}`);
+        } catch (err) {
+          // Roll back — restore the removed line.
+          set({ items: [...get().items, removed] });
+          throw err;
+        }
       },
 
-      updateQuantity: (productId, quantity) => {
+      updateQuantity: async (productId, quantity) => {
+        const items = get().items;
+        const existing = items.find((i) => i.productId === productId);
+        if (!existing) return;
+        const delta = quantity - existing.quantity;
+        if (delta === 0) return;
+
         if (quantity <= 0) {
-          get().removeItem(productId);
+          await get().removeItem(productId);
           return;
         }
+
         set({
-          items: get().items.map((i) =>
+          items: items.map((i) =>
             i.productId === productId ? { ...i, quantity } : i
           ),
         });
+        try {
+          await api.post('/cart/items', {
+            productId,
+            quantity: Math.abs(delta),
+            action: delta > 0 ? 'increment' : 'decrement',
+          });
+        } catch (err) {
+          // Roll back to the pre-change quantity.
+          set({
+            items: get().items.map((i) =>
+              i.productId === productId ? { ...i, quantity: existing.quantity } : i
+            ),
+          });
+          throw err;
+        }
       },
 
-      clearCart: () => set({ items: [] }),
+      clearCart: () => {
+        set({ items: [] });
+        // Best-effort — the local order already succeeded either way.
+        api.delete('/cart').catch(() => {});
+      },
+
+      resetCart: () => set({ items: [] }),
 
       openCart: () => set({ isOpen: true }),
       closeCart: () => set({ isOpen: false }),
@@ -116,11 +205,16 @@ export const useCartStore = create<CartState>()(
       // backend already emits product-keyed items, so we just trust them.
       setItemsFromReorder: (items) => set({ items }),
 
-      // Hook invoked after login. Today the cart is purely client-side, so we
-      // just retain the existing guest cart. Hook reserved for future server
-      // cart sync / stock re-validation.
+      // Hook invoked after login. The customer's server cart (from a
+      // previous session/device) is the source of truth once authenticated
+      // — replace the local basket wholesale with it.
       mergeOnLogin: async () => {
-        return;
+        try {
+          const res = await api.get<{ data: { items: ServerCartItem[] } }>('/cart');
+          set({ items: res.data.data.items.map(toCartItem) });
+        } catch {
+          // Keep whatever was already in the local basket.
+        }
       },
 
       subtotal: () =>

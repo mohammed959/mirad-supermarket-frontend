@@ -1,10 +1,12 @@
 'use client';
 import { Plus } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { ProductImage } from '@/components/common/ProductImage';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { motion } from 'framer-motion';
 import { useCartStore } from '@/stores/cartStore';
+import { useCustomerAuthStore } from '@/stores/customerAuthStore';
 import { useLocale, pickLocalized } from '@/i18n/useLocale';
 import type { Locale } from '@/i18n/config';
 import { formatPrice, cn } from '@/lib/utils';
@@ -52,7 +54,10 @@ function stop(e: React.MouseEvent | React.KeyboardEvent) {
 export function ProductCard({ product }: ProductCardProps) {
   const router = useRouter();
   const t = useTranslations('products');
+  const tAuth = useTranslations('auth');
+  const tCart = useTranslations('cart');
   const locale = useLocale();
+  const isAuth = useCustomerAuthStore((s) => s.isAuthenticated);
   const items = useCartStore((s) => s.items);
   const addProduct = useCartStore((s) => s.addProduct);
   const updateQuantity = useCartStore((s) => s.updateQuantity);
@@ -81,7 +86,25 @@ export function ProductCard({ product }: ProductCardProps) {
   const handleAdd = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!available) return;
-    addProduct(product);
+    if (!isAuth) {
+      toast(tAuth('signInToShop'));
+      router.push('/login');
+      return;
+    }
+    addProduct(product).catch((err) => {
+      toast.error(err.response?.data?.message ?? tCart('updateFailed'));
+    });
+  };
+
+  const handleQuantityChange = (q: number) => {
+    if (!isAuth) {
+      toast(tAuth('signInToShop'));
+      router.push('/login');
+      return;
+    }
+    updateQuantity(product.id, q).catch((err) => {
+      toast.error(err.response?.data?.message ?? tCart('updateFailed'));
+    });
   };
 
   // The whole card is clickable. Inner interactive controls (add, stepper,
@@ -155,7 +178,7 @@ export function ProductCard({ product }: ProductCardProps) {
               size="sm"
               value={cartItem.quantity}
               max={maxQty}
-              onChange={(q) => updateQuantity(product.id, q)}
+              onChange={handleQuantityChange}
             />
           </div>
         )}

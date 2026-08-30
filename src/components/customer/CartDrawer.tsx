@@ -38,6 +38,18 @@ export function CartDrawer() {
   const sub = subtotal();
   const nameFor = useCartItemNames(items);
 
+  const handleUpdateQuantity = (productId: string, quantity: number) => {
+    updateQuantity(productId, quantity).catch((err) => {
+      toast.error(err.response?.data?.message ?? t('cart.updateFailed'));
+    });
+  };
+
+  const handleRemove = (productId: string) => {
+    removeItem(productId).catch((err) => {
+      toast.error(err.response?.data?.message ?? t('cart.updateFailed'));
+    });
+  };
+
   const { data: minOrder } = useSWR<MinimumOrder | null>(
     isOpen && items.length > 0 ? '/delivery/minimum-order' : null,
     fetcher,
@@ -122,12 +134,12 @@ export function CartDrawer() {
                       </div>
 
                       <div className="flex flex-col items-end justify-between">
-                        <button onClick={() => removeItem(item.productId)} className="text-gray-400 hover:text-red-500 transition-colors" aria-label={t('cart.remove')}>
+                        <button onClick={() => handleRemove(item.productId)} className="text-gray-400 hover:text-red-500 transition-colors" aria-label={t('cart.remove')}>
                           <Trash2 className="h-4 w-4" />
                         </button>
                         <div className="flex items-center gap-2">
                           <button
-                            onClick={() => updateQuantity(item.productId, item.quantity - 1)}
+                            onClick={() => handleUpdateQuantity(item.productId, item.quantity - 1)}
                             className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 transition-colors"
                             aria-label="-"
                           >
@@ -135,7 +147,7 @@ export function CartDrawer() {
                           </button>
                           <span className="w-5 text-center text-sm font-bold">{item.quantity}</span>
                           <button
-                            onClick={() => updateQuantity(item.productId, item.quantity + 1)}
+                            onClick={() => handleUpdateQuantity(item.productId, item.quantity + 1)}
                             className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-500 hover:bg-brand-600 transition-colors"
                             aria-label="+"
                           >

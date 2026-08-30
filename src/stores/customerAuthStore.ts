@@ -54,6 +54,7 @@ export const useCustomerAuthStore = create<CustomerAuthState>()(
       logout: () => {
         set({ user: null, token: null, isAuthenticated: false });
         useFavoritesStore.getState().reset();
+        useCartStore.getState().resetCart();
       },
 
       fetchMe: async () => {

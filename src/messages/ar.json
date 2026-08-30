@@ -51,7 +51,8 @@
     "otpInvalid": "رمز تحقق غير صحيح. الرجاء إدخال الرمز الظاهر بالأعلى.",
     "otpExpired": "انتهت صلاحية الرمز أو تم استبداله. الرجاء طلب رمز جديد.",
     "signInToContinue": "سجّل دخولك لإتمام الطلب",
-    "signInToFavorite": "سجّل دخولك لإضافة المفضلة"
+    "signInToFavorite": "سجّل دخولك لإضافة المفضلة",
+    "signInToShop": "سجّل دخولك لإضافة منتجات إلى سلتك"
   },
   "staffAuth": {
     "title": "دخول الموظفين",
@@ -144,7 +145,8 @@
     "viewCart": "عرض السلة",
     "startShopping": "ابدأ التسوق",
     "remove": "إزالة",
-    "freeDeliveryProgress": "أضف {amount} للحصول على توصيل مجاني"
+    "freeDeliveryProgress": "أضف {amount} للحصول على توصيل مجاني",
+    "updateFailed": "تعذر تحديث سلتك"
   },
   "checkout": {
     "title": "إتمام الشراء",

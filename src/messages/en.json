@@ -51,7 +51,8 @@
     "otpInvalid": "Invalid OTP. Please enter the OTP shown above.",
     "otpExpired": "OTP expired or replaced. Please request a new OTP.",
     "signInToContinue": "Sign in to complete your order",
-    "signInToFavorite": "Sign in to save favorites"
+    "signInToFavorite": "Sign in to save favorites",
+    "signInToShop": "Sign in to add items to your cart"
   },
   "staffAuth": {
     "title": "Staff sign in",
@@ -144,7 +145,8 @@
     "viewCart": "View cart",
     "startShopping": "Start shopping",
     "remove": "Remove",
-    "freeDeliveryProgress": "Add {amount} for free delivery"
+    "freeDeliveryProgress": "Add {amount} for free delivery",
+    "updateFailed": "Couldn't update your cart"
   },
   "checkout": {
     "title": "Checkout",

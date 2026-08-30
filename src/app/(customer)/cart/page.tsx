@@ -1,4 +1,5 @@
 'use client';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
@@ -8,9 +9,11 @@ import { useTranslations } from 'next-intl';
 import { Trash2, ShoppingBag, ArrowRight, AlertTriangle } from 'lucide-react';
 import api from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
+import { useCustomerAuthStore } from '@/stores/customerAuthStore';
 import { useCartItemNames } from '@/hooks/useCartItemNames';
 import { formatPrice } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
+import { PageSpinner } from '@/components/ui/Spinner';
 import { QuantityStepper } from '@/components/ui/QuantityStepper';
 import { Card } from '@/components/ui/Card';
 
@@ -32,14 +35,36 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 export default function CartPage() {
   const t = useTranslations();
   const router = useRouter();
+  const isAuthenticated = useCustomerAuthStore((s) => s.isAuthenticated);
   const items = useCartStore((s) => s.items);
   const subtotal = useCartStore((s) => s.subtotal());
   const updateQuantity = useCartStore((s) => s.updateQuantity);
   const removeItem = useCartStore((s) => s.removeItem);
   const nameFor = useCartItemNames(items);
 
+  // Guard against a false-negative flash before the persisted auth store
+  // rehydrates client-side (same pattern as favorites/buy-again).
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => setHydrated(true), []);
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!isAuthenticated) router.push('/login');
+  }, [hydrated, isAuthenticated, router]);
+
+  const handleUpdateQuantity = (productId: string, quantity: number) => {
+    updateQuantity(productId, quantity).catch((err) => {
+      toast.error(err.response?.data?.message ?? t('cart.updateFailed'));
+    });
+  };
+
+  const handleRemove = (productId: string) => {
+    removeItem(productId).catch((err) => {
+      toast.error(err.response?.data?.message ?? t('cart.updateFailed'));
+    });
+  };
+
   const { data: minOrder } = useSWR<MinimumOrder | null>(
-    items.length > 0 ? '/delivery/minimum-order' : null,
+    isAuthenticated && items.length > 0 ? '/delivery/minimum-order' : null,
     fetcher,
   );
   const minimumEnabled = Boolean(minOrder?.enabled);
@@ -53,6 +78,10 @@ export default function CartPage() {
     }
     router.push('/checkout');
   };
+
+  if (!hydrated || !isAuthenticated) {
+    return <PageSpinner />;
+  }
 
   if (items.length === 0) {
     return (
@@ -97,12 +126,12 @@ export default function CartPage() {
                   <QuantityStepper
                     size="sm"
                     value={item.quantity}
-                    onChange={(q) => updateQuantity(item.productId, q)}
+                    onChange={(q) => handleUpdateQuantity(item.productId, q)}
                   />
                 </div>
               </div>
               <button
-                onClick={() => removeItem(item.productId)}
+                onClick={() => handleRemove(item.productId)}
                 aria-label={t('cart.remove')}
                 className="self-start rounded-full p-1.5 text-gray-400 hover:bg-danger-50 hover:text-danger-500 transition-colors"
               >

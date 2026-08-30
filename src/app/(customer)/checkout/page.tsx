@@ -18,7 +18,6 @@ import { CustomerSubscription, Order, PaymentMethod, FulfillmentType } from '@/t
 import { formatPrice, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { InlineOtpLogin } from '@/components/customer/InlineOtpLogin';
 import { PickupScheduler, type PickupSchedule } from '@/components/customer/PickupScheduler';
 import { DeliveryImagesUploader } from '@/components/customer/DeliveryImagesUploader';
 
@@ -74,6 +73,13 @@ export default function CheckoutPage() {
 
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
+
+  // Checkout is customer-only — a logged-out visitor never reaches the
+  // form (same hard-redirect pattern as /cart, /orders, /favorites).
+  useEffect(() => {
+    if (!hydrated) return;
+    if (!isAuthenticated) router.push('/login');
+  }, [hydrated, isAuthenticated, router]);
 
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('DELIVERY');
   const [notes, setNotes] = useState('');
@@ -138,7 +144,7 @@ export default function CheckoutPage() {
     }
   }, [quote, deliveryAvailable, fulfillmentType]);
 
-  if (!hydrated) {
+  if (!hydrated || !isAuthenticated) {
     return <Skeleton className="h-64 w-full" />;
   }
 
@@ -237,8 +243,6 @@ export default function CheckoutPage() {
   return (
     <div className="mx-auto max-w-lg space-y-5">
       <h1 className="text-xl font-bold text-gray-900">{t('checkout.title')}</h1>
-
-      {!isAuthenticated && <InlineOtpLogin />}
 
       {/* Fulfillment selector */}
       <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
@@ -476,7 +480,6 @@ export default function CheckoutPage() {
         size="lg"
         loading={loading}
         disabled={
-          !isAuthenticated ||
           (!isPickup && !hasLocation) ||
           (!isPickup && !deliveryAvailable) ||
           belowMinimum ||
@@ -485,17 +488,15 @@ export default function CheckoutPage() {
         }
         onClick={handlePlaceOrder}
       >
-        {!isAuthenticated
-          ? t('auth.signInToContinue')
-          : !isPickup && !hasLocation
-            ? t('checkout.chooseLocation')
-            : !isPickup && !deliveryAvailable
-              ? t('delivery.notAvailableShort')
-              : scheduledIncomplete
-                ? t('checkout.pickWindowRequired')
-                : belowMinimum
-                  ? t('checkout.addMore', { amount: formatPrice(minimumAmount - subtotal) })
-                  : `${t('checkout.placeOrder')} · ${formatPrice(total)}`}
+        {!isPickup && !hasLocation
+          ? t('checkout.chooseLocation')
+          : !isPickup && !deliveryAvailable
+            ? t('delivery.notAvailableShort')
+            : scheduledIncomplete
+              ? t('checkout.pickWindowRequired')
+              : belowMinimum
+                ? t('checkout.addMore', { amount: formatPrice(minimumAmount - subtotal) })
+                : `${t('checkout.placeOrder')} · ${formatPrice(total)}`}
       </Button>
     </div>
   );

@@ -99,14 +99,29 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
     try { await toggleFav(product.id); } catch { /* ignore */ }
   };
 
+  const requireAuth = () => {
+    if (isAuth) return true;
+    toast(t('auth.signInToShop'));
+    router.push('/login');
+    return false;
+  };
+
   const handleAdd = () => {
     if (!available) return;
-    if (cartItem) {
-      updateQuantity(product.id, cartItem.quantity + 1);
-    } else {
-      addProduct(product);
-    }
-    toast.success(t('products.addToCart'));
+    if (!requireAuth()) return;
+    const action = cartItem
+      ? updateQuantity(product.id, cartItem.quantity + 1)
+      : addProduct(product);
+    action
+      .then(() => toast.success(t('products.addToCart')))
+      .catch((err) => toast.error(err.response?.data?.message ?? t('cart.updateFailed')));
+  };
+
+  const handleStep = (nextQuantity: number) => {
+    if (!requireAuth()) return;
+    updateQuantity(product.id, nextQuantity).catch((err) => {
+      toast.error(err.response?.data?.message ?? t('cart.updateFailed'));
+    });
   };
 
   return (
@@ -225,7 +240,7 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
                 <div className="flex flex-1 items-center justify-between gap-2 rounded-full bg-gradient-to-r from-brand-500 to-brand-600 px-1.5 py-1 text-white shadow-soft">
                   <motion.button
                     type="button"
-                    onClick={() => updateQuantity(product.id, cartItem.quantity - 1)}
+                    onClick={() => handleStep(cartItem.quantity - 1)}
                     whileTap={{ scale: 0.9 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 26 }}
                     aria-label="−"
@@ -241,7 +256,7 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
                   </div>
                   <motion.button
                     type="button"
-                    onClick={() => updateQuantity(product.id, cartItem.quantity + 1)}
+                    onClick={() => handleStep(cartItem.quantity + 1)}
                     whileTap={{ scale: 0.9 }}
                     transition={{ type: 'spring', stiffness: 420, damping: 26 }}
                     aria-label="+"

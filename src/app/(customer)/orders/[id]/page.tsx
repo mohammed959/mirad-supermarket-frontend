@@ -39,7 +39,7 @@ export default function OrderDetailPage() {
   const t = useTranslations();
   const locale = useLocale();
   const { id } = useParams<{ id: string }>();
-  const { data: order, isLoading, mutate } = useSWR<Order>(`/orders/${id}`, fetcher, { refreshInterval: 15000 });
+  const { data: order, isLoading, mutate } = useSWR<Order>(`/orders/${id}?lang=${locale}`, fetcher, { refreshInterval: 15000 });
 
   const setItemsFromReorder = useCartStore((s) => s.setItemsFromReorder);
   const openCart = useCartStore((s) => s.openCart);
@@ -98,7 +98,7 @@ export default function OrderDetailPage() {
   const handleReorder = async () => {
     setReordering(true);
     try {
-      const res = await api.post<{ data: ReorderResult }>(`/orders/${order.id}/reorder`);
+      const res = await api.post<{ data: ReorderResult }>(`/orders/${order.id}/reorder`, { lang: locale });
       const { items, skipped } = res.data.data;
       if (items.length === 0) {
         toast.error(t('orders.buyAgainEmpty'));
@@ -107,8 +107,10 @@ export default function OrderDetailPage() {
       setItemsFromReorder(
         items.map((i) => ({
           productId: i.productId,
+          // `productName` already comes back localized for the requested
+          // `lang` — no separate Arabic field to carry through anymore.
           productName: i.productName,
-          productNameAr: i.productNameAr,
+          productNameAr: i.productName,
           productImage: i.productImage,
           price: i.price,
           quantity: i.quantity,
@@ -322,8 +324,11 @@ export default function OrderDetailPage() {
           // still render. `productName` snapshot on the line itself wins
           // when the source product has been renamed or deleted.
           const productEntity = item.product ?? item.variant?.product ?? null;
+          // `productName`/`productEntity.name` already come back localized
+          // for the requested `lang` (fetched with `?lang=${locale}` above)
+          // — no separate Arabic field to pick between anymore.
           const productName = item.productName
-            ? (locale === 'ar' && item.productNameAr ? item.productNameAr : item.productName)
+            ? item.productName
             : productEntity
               ? pickLocalized(productEntity, locale)
               : '—';

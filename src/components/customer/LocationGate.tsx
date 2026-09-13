@@ -45,7 +45,7 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
   const locale = useLocale();
   const mapLang: 'ar' | 'en' = locale === 'ar' ? 'ar' : 'en';
 
-  const { data, error, isLoading } = useSWR<BranchData>('/delivery/branch', fetcher, {
+  const { data, error, isLoading } = useSWR<BranchData>(`/delivery/branch?lang=${mapLang}`, fetcher, {
     revalidateOnFocus: false,
     refreshInterval: 60_000,
   });
@@ -116,19 +116,16 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
     setChecking(true);
     setOutOfCoverage(false);
     try {
-      const res = await api.post('/delivery/check-coverage', { lat: pin.lat, lng: pin.lng });
+      const res = await api.post('/delivery/check-coverage', { lat: pin.lat, lng: pin.lng, lang: mapLang });
       const { covered, area } = res.data.data as {
         covered: boolean;
-        area: { name: string; nameAr: string } | null;
+        area: { name: string } | null;
       };
       if (covered) {
         // Customer's explicit dropdown choice wins for display; otherwise use
-        // the city the coordinates resolved into.
-        const detected = area
-          ? mapLang === 'ar'
-            ? area.nameAr || area.name
-            : area.name || area.nameAr
-          : null;
+        // the city the coordinates resolved into (already localized by the
+        // server for the requested `lang`).
+        const detected = area ? area.name : null;
         setLocation({
           label: 'Home',
           addressLine: street.trim() || null,

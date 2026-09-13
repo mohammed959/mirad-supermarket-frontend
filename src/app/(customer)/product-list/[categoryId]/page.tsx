@@ -38,7 +38,7 @@ export default function ProductListPage() {
   // The active category — fetched separately so we get its `subcategories[]`
   // (the stripped `/categories/list` no longer includes them).
   const { data: activeCategoryFull } = useSWR<Category | null>(
-    categoryId ? `/categories/${categoryId}` : null,
+    categoryId ? `/categories/${categoryId}?lang=${locale}` : null,
     getFetcher,
   );
 

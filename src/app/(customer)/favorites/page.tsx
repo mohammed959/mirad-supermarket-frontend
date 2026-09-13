@@ -7,6 +7,7 @@ import { Heart } from 'lucide-react';
 import api from '@/lib/api';
 import { Product } from '@/types';
 import { useCustomerAuthStore } from '@/stores/customerAuthStore';
+import { useLocale } from '@/i18n/useLocale';
 import { ProductCard } from '@/components/customer/ProductCard';
 import { ProductGridSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -23,6 +24,7 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 export default function FavoritesPage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
   const { isAuthenticated } = useCustomerAuthStore();
   const [hydrated, setHydrated] = useState(false);
 
@@ -34,7 +36,7 @@ export default function FavoritesPage() {
   }, [hydrated, isAuthenticated, router]);
 
   const { data, isLoading } = useSWR<FavoriteEntry[]>(
-    isAuthenticated ? '/favorites' : null,
+    isAuthenticated ? `/favorites?lang=${locale}` : null,
     fetcher
   );
 

@@ -20,6 +20,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { PickupScheduler, type PickupSchedule } from '@/components/customer/PickupScheduler';
 import { DeliveryImagesUploader } from '@/components/customer/DeliveryImagesUploader';
+import { useLocale } from '@/i18n/useLocale';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
@@ -57,6 +58,7 @@ interface DeliveryQuote {
 export default function CheckoutPage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
   // Checkout is scoped to the customer auth store ONLY. A staff session that
   // happens to live in the same browser is invisible here.
   const isAuthenticated = useCustomerAuthStore((s) => s.isAuthenticated);
@@ -104,7 +106,7 @@ export default function CheckoutPage() {
   }, [isPickup, pickupSchedule.pickupType]);
 
   const { data: subscription } = useSWR<CustomerSubscription | null>(
-    isAuthenticated ? '/subscriptions/my' : null,
+    isAuthenticated ? `/subscriptions/my?lang=${locale}` : null,
     fetcher
   );
 
@@ -190,6 +192,7 @@ export default function CheckoutPage() {
     setLoading(true);
     try {
       const res = await api.post<{ data: Order }>('/orders', {
+        lang: locale,
         fulfillmentType,
         addressId: isPickup ? undefined : locAddressId ?? undefined,
         deliveryLat: isPickup ? undefined : locLat ?? undefined,

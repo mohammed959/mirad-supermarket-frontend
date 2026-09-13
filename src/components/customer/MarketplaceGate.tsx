@@ -3,13 +3,13 @@ import useSWR from 'swr';
 import { Construction } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import api from '@/lib/api';
+import { useLocale } from '@/i18n/useLocale';
 
 interface BranchInfo {
   configured: boolean;
   branch: {
     id: string;
     name: string;
-    nameAr: string;
     address: string;
     latitude: number;
     longitude: number;
@@ -27,7 +27,8 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
  */
 export function MarketplaceGate({ children }: { children: React.ReactNode }) {
   const t = useTranslations('delivery');
-  const { data, isLoading, error } = useSWR<BranchInfo>('/delivery/branch', fetcher, {
+  const locale = useLocale();
+  const { data, isLoading, error } = useSWR<BranchInfo>(`/delivery/branch?lang=${locale}`, fetcher, {
     revalidateOnFocus: false,
     refreshInterval: 60_000,
   });

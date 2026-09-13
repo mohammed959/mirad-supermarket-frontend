@@ -11,13 +11,15 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { formatPrice } from '@/lib/utils';
+import { useLocale } from '@/i18n/useLocale';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
 export default function OrderPaymentPage({ params }: { params: { id: string } }) {
   const router = useRouter();
   const t = useTranslations();
-  const { data, isLoading, mutate } = useSWR<Order>(`/orders/${params.id}`, fetcher);
+  const locale = useLocale();
+  const { data, isLoading, mutate } = useSWR<Order>(`/orders/${params.id}?lang=${locale}`, fetcher);
 
   const [proofUrl, setProofUrl] = useState('');
   const [submitting, setSubmitting] = useState(false);

@@ -11,12 +11,14 @@ import { ProductCard } from '@/components/customer/ProductCard';
 import { ProductGridSkeleton } from '@/components/ui/Skeleton';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/Button';
+import { useLocale } from '@/i18n/useLocale';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
 export default function BuyAgainPage() {
   const router = useRouter();
   const t = useTranslations();
+  const locale = useLocale();
   const { isAuthenticated } = useCustomerAuthStore();
   const [hydrated, setHydrated] = useState(false);
 
@@ -28,7 +30,7 @@ export default function BuyAgainPage() {
   }, [hydrated, isAuthenticated, router]);
 
   const { data, isLoading } = useSWR<BuyAgainEntry[]>(
-    isAuthenticated ? '/orders/buy-again' : null,
+    isAuthenticated ? `/orders/buy-again?lang=${locale}` : null,
     fetcher
   );
 

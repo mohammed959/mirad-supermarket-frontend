@@ -47,9 +47,9 @@ export default function SubscriptionsPage() {
   const [hydrated, setHydrated] = useState(false);
   useEffect(() => setHydrated(true), []);
 
-  const { data: plans, isLoading } = useSWR<SubscriptionPlan[]>('/subscriptions/plans', fetcher);
+  const { data: plans, isLoading } = useSWR<SubscriptionPlan[]>(`/subscriptions/plans?lang=${locale}`, fetcher);
   const { data: mySub, mutate: refreshSub } = useSWR<CustomerSubscription | null>(
-    isAuth ? '/subscriptions/my' : null,
+    isAuth ? `/subscriptions/my?lang=${locale}` : null,
     fetcher
   );
 

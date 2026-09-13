@@ -8,17 +8,19 @@ import { useCustomerAuthStore } from '@/stores/customerAuthStore';
 import { BuyAgainEntry } from '@/types';
 import { ProductCard } from './ProductCard';
 import { ProductCardSkeleton } from '@/components/ui/Skeleton';
+import { useLocale } from '@/i18n/useLocale';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
 export function BuyAgainStrip() {
   const t = useTranslations();
+  const locale = useLocale();
   // Customer-only store; if isAuth is true the user is necessarily a CUSTOMER,
   // so we no longer need a separate role gate.
   const isAuth = useCustomerAuthStore((s) => s.isAuthenticated);
 
   const { data, isLoading } = useSWR<BuyAgainEntry[]>(
-    isAuth ? '/orders/buy-again' : null,
+    isAuth ? `/orders/buy-again?lang=${locale}` : null,
     fetcher
   );
 

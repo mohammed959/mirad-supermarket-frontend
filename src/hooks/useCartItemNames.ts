@@ -27,7 +27,7 @@ export function useCartItemNames(items: CartItem[]) {
   );
 
   const { data } = useSWR<{ products: Product[] }>(
-    idsKey ? `/products?ids=${encodeURIComponent(idsKey)}&all=true&includeOutOfStock=true&pageSize=100` : null,
+    idsKey ? `/products?ids=${encodeURIComponent(idsKey)}&all=true&includeOutOfStock=true&pageSize=100&lang=${locale}` : null,
     fetcher,
     { revalidateOnFocus: false },
   );

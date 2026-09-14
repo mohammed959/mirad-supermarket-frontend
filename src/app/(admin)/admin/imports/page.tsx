@@ -17,6 +17,8 @@ interface ImportError {
 interface ImportSummary {
   totalRows: number;
   productsCreated: number;
+  productsUpdated: number;
+  failedRows: number;
   errors: ImportError[];
 }
 
@@ -89,7 +91,9 @@ export default function AdminImportsPage() {
         </div>
         <p className="text-sm text-gray-600">
           Download the template, fill the rows, then upload below. <strong>One row per product</strong> — price,
-          quantity, SKU and barcode live directly on the product. No variant rows.
+          quantity, SKU and barcode live directly on the product. No variant rows. A <strong>new SKU creates</strong>{' '}
+          a product; an <strong>existing SKU updates</strong> it instead (quantity replaces the current stock —
+          it isn&apos;t added to it).
         </p>
         <Button variant="secondary" size="sm" onClick={downloadTemplate}>
           <Download className="h-4 w-4" /> Download template
@@ -102,7 +106,7 @@ export default function AdminImportsPage() {
               <li><code>name</code> — English product name</li>
               <li><code>nameAr</code> — Arabic product name</li>
               <li><code>categorySlug</code> — must already exist</li>
-              <li><code>sku</code> — unique across all products and within the file</li>
+              <li><code>sku</code> — must be unique within the file; matching an existing product&apos;s SKU updates that product instead of creating a new one</li>
               <li><code>price</code> — &gt; 0</li>
               <li><code>quantity</code> — &gt;= 0 (also accepted as <code>stock</code>)</li>
             </ul>
@@ -181,9 +185,11 @@ export default function AdminImportsPage() {
             <h2 className="font-semibold text-gray-900">3. Result</h2>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 text-center">
+          <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
             <SummaryTile label="Rows read"        value={result.totalRows} />
             <SummaryTile label="Products created" value={result.productsCreated} color="green" />
+            <SummaryTile label="Products updated" value={result.productsUpdated} color="green" />
+            <SummaryTile label="Rows failed"      value={result.failedRows} color={result.failedRows > 0 ? 'red' : 'gray'} />
           </div>
 
           {result.errors.length > 0 && (
@@ -212,11 +218,16 @@ export default function AdminImportsPage() {
   );
 }
 
-function SummaryTile({ label, value, color = 'gray' }: { label: string; value: number; color?: 'gray' | 'green' }) {
+function SummaryTile({ label, value, color = 'gray' }: { label: string; value: number; color?: 'gray' | 'green' | 'red' }) {
+  const tone = color === 'green'
+    ? { border: 'border-green-100', bg: 'bg-green-50', text: 'text-green-700' }
+    : color === 'red'
+      ? { border: 'border-red-100', bg: 'bg-red-50', text: 'text-red-700' }
+      : { border: 'border-gray-100', bg: 'bg-gray-50', text: 'text-gray-500' };
   return (
-    <div className={`rounded-xl border p-3 ${color === 'green' ? 'border-green-100 bg-green-50' : 'border-gray-100 bg-gray-50'}`}>
-      <p className={`text-xs ${color === 'green' ? 'text-green-700' : 'text-gray-500'}`}>{label}</p>
-      <p className={`text-2xl font-bold mt-1 ${color === 'green' ? 'text-green-700' : 'text-gray-900'}`}>{value}</p>
+    <div className={`rounded-xl border p-3 ${tone.border} ${tone.bg}`}>
+      <p className={`text-xs ${tone.text}`}>{label}</p>
+      <p className={`text-2xl font-bold mt-1 ${color === 'gray' ? 'text-gray-900' : tone.text}`}>{value}</p>
     </div>
   );
 }

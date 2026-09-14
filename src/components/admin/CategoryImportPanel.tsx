@@ -15,11 +15,22 @@ interface ImportError {
 
 interface CategoryImportSummary {
   totalRows: number;
+  successfulRows: number;
+  failedRows: number;
   categoriesCreated: number;
-  categoriesUpdated: number;
+  categoriesReused: number;
   subcategoriesCreated: number;
-  subcategoriesUpdated: number;
   errors: ImportError[];
+  resultFile: string;
+  resultFileName: string;
+}
+
+/** Decode a base64 string to a Blob without pulling in an extra dependency. */
+function base64ToBlob(base64: string, mime: string): Blob {
+  const bytes = atob(base64);
+  const arr = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+  return new Blob([arr], { type: mime });
 }
 
 /**
@@ -93,8 +104,10 @@ export function CategoryImportPanel({ onImported }: { onImported?: () => void })
         </div>
         <p className="text-sm text-gray-600">
           One row per <strong>category + optional subcategory</strong>. Repeat the same category on
-          multiple rows to add several subcategories. <code>status</code> TRUE = active, FALSE =
-          inactive (blank = active). Re-importing the same names updates the existing records.
+          multiple rows to add several subcategories. A category is matched to an existing one by its
+          <strong> Arabic name</strong> (extra spacing ignored) — a match reuses it as-is; no match creates
+          it. Subcategories are always created, even if the name is already used elsewhere.
+          <code>status</code> TRUE = active, FALSE = inactive (blank = active).
         </p>
         <Button variant="secondary" size="sm" onClick={downloadTemplate}>
           <Download className="h-4 w-4" /> Download template
@@ -103,10 +116,10 @@ export function CategoryImportPanel({ onImported }: { onImported?: () => void })
           <summary className="cursor-pointer font-semibold">Column reference</summary>
           <ul className="ml-4 mt-2 list-disc space-y-0.5">
             <li><code>category_name_en</code>, <code>category_name_ar</code> — required</li>
-            <li><code>category_sort</code> — number (default 0)</li>
+            <li><code>category_sort</code> — whole number (default 0)</li>
             <li><code>category_status</code> — TRUE / FALSE (default TRUE)</li>
             <li><code>subcategory_name_en</code>, <code>subcategory_name_ar</code> — optional, but both required together</li>
-            <li><code>subcategory_sort</code> — number (default 0)</li>
+            <li><code>subcategory_sort</code> — whole number (default 0)</li>
             <li><code>sub_category_status</code> — TRUE / FALSE (default TRUE)</li>
           </ul>
         </details>
@@ -161,13 +174,35 @@ export function CategoryImportPanel({ onImported }: { onImported?: () => void })
             )}
             <h3 className="font-semibold text-gray-900">Result</h3>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center sm:grid-cols-5">
+          <div className="grid grid-cols-3 gap-2 text-center sm:grid-cols-6">
             <Tile label="Rows" value={result.totalRows} />
+            <Tile label="Succeeded" value={result.successfulRows} color="green" />
+            <Tile label="Failed" value={result.failedRows} color={result.failedRows > 0 ? 'red' : 'gray'} />
             <Tile label="Cat. created" value={result.categoriesCreated} color="green" />
-            <Tile label="Cat. updated" value={result.categoriesUpdated} />
+            <Tile label="Cat. reused" value={result.categoriesReused} />
             <Tile label="Sub created" value={result.subcategoriesCreated} color="green" />
-            <Tile label="Sub updated" value={result.subcategoriesUpdated} />
           </div>
+
+          {result.resultFile && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                const blob = base64ToBlob(
+                  result.resultFile,
+                  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                );
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = result.resultFileName || 'category-import-result.xlsx';
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+            >
+              <Download className="h-4 w-4" /> Download result file
+            </Button>
+          )}
 
           {result.errors.length > 0 && (
             <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
@@ -197,11 +232,16 @@ export function CategoryImportPanel({ onImported }: { onImported?: () => void })
   );
 }
 
-function Tile({ label, value, color = 'gray' }: { label: string; value: number; color?: 'gray' | 'green' }) {
+function Tile({ label, value, color = 'gray' }: { label: string; value: number; color?: 'gray' | 'green' | 'red' }) {
+  const tone = color === 'green'
+    ? { border: 'border-green-100', bg: 'bg-green-50', text: 'text-green-700' }
+    : color === 'red'
+      ? { border: 'border-red-100', bg: 'bg-red-50', text: 'text-red-700' }
+      : { border: 'border-gray-100', bg: 'bg-gray-50', text: 'text-gray-500' };
   return (
-    <div className={`rounded-xl border p-2 ${color === 'green' ? 'border-green-100 bg-green-50' : 'border-gray-100 bg-gray-50'}`}>
-      <p className={`text-[10px] ${color === 'green' ? 'text-green-700' : 'text-gray-500'}`}>{label}</p>
-      <p className={`mt-0.5 text-xl font-bold ${color === 'green' ? 'text-green-700' : 'text-gray-900'}`}>{value}</p>
+    <div className={`rounded-xl border p-2 ${tone.border} ${tone.bg}`}>
+      <p className={`text-[10px] ${tone.text}`}>{label}</p>
+      <p className={`mt-0.5 text-xl font-bold ${color === 'gray' ? 'text-gray-900' : tone.text}`}>{value}</p>
     </div>
   );
 }

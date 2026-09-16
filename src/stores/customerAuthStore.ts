@@ -16,6 +16,14 @@ interface CustomerAuthState {
   verifyOtp: (mobile: string, code: string) => Promise<void>;
   logout: () => void;
   fetchMe: () => Promise<void>;
+  /**
+   * Permanently deletes the signed-in customer's account server-side
+   * (`DELETE /auth/me`, soft-delete — see backend `auth.service.ts`), then
+   * clears local session + customer-specific state exactly like `logout`.
+   * Throws on failure so the caller (the delete-account screen) can show
+   * the error instead of clearing state prematurely.
+   */
+  deleteAccount: () => Promise<void>;
 }
 
 async function loadCustomerSideEffects() {
@@ -23,6 +31,14 @@ async function loadCustomerSideEffects() {
     useFavoritesStore.getState().load(),
     useCartStore.getState().mergeOnLogin(),
   ]);
+}
+
+/** Wipes every customer-specific client-side store — cart, favorites. Used
+ *  by both `logout` and `deleteAccount` so a deleted account never leaves
+ *  stale data visible to whoever signs in next on this device. */
+function clearCustomerSideState() {
+  useFavoritesStore.getState().reset();
+  useCartStore.getState().resetCart();
 }
 
 /**
@@ -53,8 +69,13 @@ export const useCustomerAuthStore = create<CustomerAuthState>()(
 
       logout: () => {
         set({ user: null, token: null, isAuthenticated: false });
-        useFavoritesStore.getState().reset();
-        useCartStore.getState().resetCart();
+        clearCustomerSideState();
+      },
+
+      deleteAccount: async () => {
+        await api.delete('/auth/me');
+        set({ user: null, token: null, isAuthenticated: false });
+        clearCustomerSideState();
       },
 
       fetchMe: async () => {

@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { Package, Star, LogOut, ChevronRight, Heart, RotateCcw, MapPin } from 'lucide-react';
+import { Package, Star, LogOut, ChevronRight, Heart, RotateCcw, MapPin, Settings } from 'lucide-react';
 import { useCustomerAuthStore } from '@/stores/customerAuthStore';
 import { Button } from '@/components/ui/Button';
 import { LanguageSwitcher } from '@/components/common/LanguageSwitcher';
@@ -25,6 +25,7 @@ export default function AccountPage() {
     { icon: RotateCcw, label: t('nav.buyAgain'),         href: '/buy-again' },
     { icon: Star,     label: t('subscriptions.title'),   href: '/subscriptions' },
     { icon: MapPin,   label: t('checkout.savedAddresses'), href: '/checkout/location' },
+    { icon: Settings, label: t('account.settings'),      href: '/account/settings' },
   ];
 
   return (

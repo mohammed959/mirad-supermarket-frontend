@@ -52,6 +52,26 @@ interface MinimumOrderSettings {
   minimumAmount: number | string;
 }
 
+interface SubtotalRangeApi {
+  id: string;
+  minSubtotal: number | string;
+  maxSubtotal: number | string;
+  deliveryFee: number | string;
+}
+
+interface SubtotalPricingApi {
+  freeDeliveryThreshold: number | string | null;
+  ranges: SubtotalRangeApi[];
+}
+
+interface SubtotalRangeRow {
+  // minSubtotal is intentionally NOT part of the row state — it is always
+  // derived from the previous row's maxSubtotal (or 0 for the first row),
+  // which is what makes gaps structurally impossible in this editor.
+  maxSubtotal: string;
+  deliveryFee: string;
+}
+
 interface DistanceRuleRow {
   minKm: string;
   maxKm: string;
@@ -103,6 +123,8 @@ export default function BranchCoveragePage() {
   const { data: settings,    mutate: mutateSettings, isLoading: loadingSettings } = useSWR<DeliverySettings | null>('/delivery/settings', fetcher);
   const { data: minOrder,    mutate: mutateMinOrder, isLoading: loadingMinOrder } = useSWR<MinimumOrderSettings | null>('/delivery/minimum-order', fetcher);
   const { data: rulesApi,    mutate: mutateRules,    isLoading: loadingRules }   = useSWR<DistanceRuleApi[]>('/delivery/distance-rules', fetcher);
+  const { data: subtotalPricing, mutate: mutateSubtotalPricing, isLoading: loadingSubtotalPricing } =
+    useSWR<SubtotalPricingApi>('/delivery/subtotal-pricing', fetcher);
 
   const [name, setName] = useState('');
   const [nameAr, setNameAr] = useState('');
@@ -128,6 +150,12 @@ export default function BranchCoveragePage() {
 
   const [rules, setRules] = useState<DistanceRuleRow[]>([emptyRule]);
   const [savingRules, setSavingRules] = useState(false);
+
+  // Subtotal-based delivery pricing — the fee source of truth (distance
+  // rules above no longer set the fee, only eligibility).
+  const [subtotalRows, setSubtotalRows] = useState<SubtotalRangeRow[]>([{ maxSubtotal: '', deliveryFee: '' }]);
+  const [subtotalFreeThreshold, setSubtotalFreeThreshold] = useState('');
+  const [savingSubtotalPricing, setSavingSubtotalPricing] = useState(false);
 
   // Sync data → local form state when SWR resolves.
   useEffect(() => {
@@ -184,6 +212,21 @@ export default function BranchCoveragePage() {
           })),
     );
   }, [rulesApi]);
+
+  useEffect(() => {
+    if (!subtotalPricing) return;
+    setSubtotalFreeThreshold(
+      subtotalPricing.freeDeliveryThreshold != null ? String(subtotalPricing.freeDeliveryThreshold) : '',
+    );
+    setSubtotalRows(
+      subtotalPricing.ranges.length
+        ? subtotalPricing.ranges.map((r) => ({
+            maxSubtotal: String(r.maxSubtotal),
+            deliveryFee: String(r.deliveryFee),
+          }))
+        : [{ maxSubtotal: '', deliveryFee: '' }],
+    );
+  }, [subtotalPricing]);
 
   const handlePinChange = useCallback((loc: { lat: number; lng: number; address?: string }) => {
     setPin({ lat: loc.lat, lng: loc.lng });
@@ -318,7 +361,47 @@ export default function BranchCoveragePage() {
     }
   };
 
-  if (loadingBranch || loadingSettings || loadingMinOrder || loadingRules) return <PageSpinner />;
+  // Client-side mirror of the backend's rules, for instant feedback — the
+  // backend re-validates on save regardless. Because minSubtotal is always
+  // derived from the previous row (never independently editable), a gap or
+  // overlap between ROWS is structurally impossible here; the only things
+  // left to check are boundary ordering, missing values, and whether the
+  // chain actually reaches the free-delivery threshold.
+  const subtotalPricingError = useMemo(
+    () => validateSubtotalRows(subtotalRows, subtotalFreeThreshold),
+    [subtotalRows, subtotalFreeThreshold],
+  );
+
+  const addSubtotalRow = () => setSubtotalRows((rows) => [...rows, { maxSubtotal: '', deliveryFee: '' }]);
+  const removeSubtotalRow = (idx: number) =>
+    setSubtotalRows((rows) => (rows.length > 1 ? rows.filter((_, i) => i !== idx) : rows));
+  const updateSubtotalRow = (idx: number, patch: Partial<SubtotalRangeRow>) =>
+    setSubtotalRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+
+  const saveSubtotalPricing = async () => {
+    if (subtotalPricingError) return toast.error(subtotalPricingError);
+    let prevMax = 0;
+    const ranges = subtotalRows.map((row) => {
+      const range = { minSubtotal: prevMax, maxSubtotal: Number(row.maxSubtotal), deliveryFee: Number(row.deliveryFee) };
+      prevMax = Number(row.maxSubtotal);
+      return range;
+    });
+    setSavingSubtotalPricing(true);
+    try {
+      await api.put('/delivery/subtotal-pricing', {
+        freeDeliveryThreshold: Number(subtotalFreeThreshold),
+        ranges,
+      });
+      await mutateSubtotalPricing();
+      toast.success(t('admin.saveDeliveryPricing'));
+    } catch (err: any) {
+      toast.error(err.response?.data?.message ?? 'Failed to save delivery pricing');
+    } finally {
+      setSavingSubtotalPricing(false);
+    }
+  };
+
+  if (loadingBranch || loadingSettings || loadingMinOrder || loadingRules || loadingSubtotalPricing) return <PageSpinner />;
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -476,10 +559,7 @@ export default function BranchCoveragePage() {
               placeholder="e.g. 100"
             />
           )}
-          <p className="text-xs text-gray-500 leading-relaxed">
-            When the customer's cart subtotal is at or above this amount, delivery becomes free for
-            non-subscribed customers. Subscribed customers still follow their plan&apos;s delivery logic.
-          </p>
+          <p className="text-xs font-medium text-amber-600">{t('admin.legacyFreeThresholdDeadNote')}</p>
         </div>
 
         {/* ─── Minimum order amount ─────────────────────────────────── */}
@@ -518,11 +598,135 @@ export default function BranchCoveragePage() {
         </Button>
       </section>
 
+      {/* Delivery pricing — by cart subtotal (the fee source of truth) */}
+      <section className="rounded-2xl bg-white border border-gray-100 p-5 space-y-4">
+        <div>
+          <h2 className="font-semibold text-gray-900">{t('admin.deliveryPricingTitle')}</h2>
+          <p className="text-xs text-gray-500 leading-relaxed mt-1">{t('admin.deliveryPricingHint')}</p>
+        </div>
+
+        {subtotalPricingError && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2">
+            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700">{subtotalPricingError}</p>
+          </div>
+        )}
+
+        <div className="space-y-2">
+          {subtotalRows.map((row, idx) => {
+            const min = idx === 0 ? 0 : Number(subtotalRows[idx - 1].maxSubtotal || 0);
+            return (
+              <div key={idx} className="grid grid-cols-12 gap-2 items-end rounded-xl border border-gray-100 bg-gray-50 p-3">
+                <div className="col-span-3">
+                  <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    {t('admin.subtotalRangeFrom')}
+                  </label>
+                  {/* Always derived from the previous row — never independently
+                      editable, so a gap between ranges cannot be created here. */}
+                  <div className="mt-1 w-full rounded-lg border border-gray-200 bg-gray-100 px-2 py-1.5 text-sm font-mono text-gray-500">
+                    {min}
+                  </div>
+                </div>
+                <div className="col-span-4">
+                  <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    {t('admin.subtotalRangeTo')}
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={row.maxSubtotal}
+                    onChange={(e) => updateSubtotalRow(idx, { maxSubtotal: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm font-mono focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                  />
+                </div>
+                <div className="col-span-4">
+                  <label className="text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                    {t('admin.feeSar')}
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    min="0"
+                    step="0.01"
+                    value={row.deliveryFee}
+                    onChange={(e) => updateSubtotalRow(idx, { deliveryFee: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-sm font-mono focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-100"
+                  />
+                </div>
+                <div className="col-span-1 text-end pb-1">
+                  <button
+                    onClick={() => removeSubtotalRow(idx)}
+                    disabled={subtotalRows.length <= 1}
+                    className="rounded-md p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-30 disabled:hover:bg-transparent"
+                    aria-label={t('admin.removeSubtotalRange')}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <Button size="sm" variant="secondary" onClick={addSubtotalRow}>
+          <Plus className="h-3.5 w-3.5" /> {t('admin.addSubtotalRange')}
+        </Button>
+
+        <div className="border-t pt-4">
+          <Input
+            label={t('admin.freeDeliveryThresholdLabel')}
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.01"
+            value={subtotalFreeThreshold}
+            onChange={(e) => setSubtotalFreeThreshold(e.target.value)}
+            placeholder="e.g. 150"
+          />
+          <p className="text-xs text-gray-500 leading-relaxed mt-1">{t('admin.freeDeliveryThresholdHint')}</p>
+        </div>
+
+        {/* Live preview in the exact requested display form. */}
+        <div className="rounded-xl bg-gray-50 border border-gray-100 p-3 space-y-1 text-sm">
+          {subtotalRows.map((row, idx) => {
+            const min = idx === 0 ? 0 : Number(subtotalRows[idx - 1].maxSubtotal || 0);
+            const max = row.maxSubtotal === '' ? null : Number(row.maxSubtotal);
+            return (
+              <div key={idx} className="flex items-center justify-between gap-3">
+                <span className="text-gray-700">
+                  {idx === 0
+                    ? t('admin.lessThanSar', { amount: max ?? '—' })
+                    : t('admin.sarRangeToLessThan', { min, max: max ?? '—' })}
+                </span>
+                <span className="font-mono text-gray-900">
+                  {t('admin.deliveryFeeLabel', { amount: row.deliveryFee || '—' })}
+                </span>
+              </div>
+            );
+          })}
+          <div className="flex items-center justify-between gap-3 border-t border-gray-200 pt-1">
+            <span className="text-gray-700">
+              {t('admin.sarOrMore', { amount: subtotalFreeThreshold || '—' })}
+            </span>
+            <span className="font-mono font-semibold text-green-600">{t('admin.freeDeliveryLabel')}</span>
+          </div>
+        </div>
+
+        <Button loading={savingSubtotalPricing} disabled={Boolean(subtotalPricingError)} onClick={saveSubtotalPricing}>
+          <Save className="h-4 w-4" /> {t('admin.saveDeliveryPricing')}
+        </Button>
+      </section>
+
       {/* Distance rules */}
       {distanceRulesEnabled && (
         <section className="rounded-2xl bg-white border border-gray-100 p-5 space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Distance-based fees</h2>
+            <div>
+              <h2 className="font-semibold text-gray-900">Distance-based fees</h2>
+              <p className="text-xs font-medium text-amber-600 mt-0.5">{t('admin.legacyDistanceFeeDeadNote')}</p>
+            </div>
             <Button
               size="sm"
               variant="secondary"
@@ -766,6 +970,43 @@ function validateRules(rules: DistanceRuleRow[]): string | null {
   // Open-ended is only allowed on the last entry by sortedness.
   for (let i = 0; i < sorted.length - 1; i++) {
     if (sorted[i].maxKm === '') return `Only the last range can be open-ended (no to-km value).`;
+  }
+  return null;
+}
+
+/**
+ * Validates the subtotal-pricing editor state before save. `minSubtotal` is
+ * never checked here for gaps/overlaps against neighbors — the editor makes
+ * that structurally impossible by always deriving it from the previous
+ * row's `maxSubtotal`. What's left: every row has valid values, boundaries
+ * strictly increase, and the chain ends exactly at the free-delivery
+ * threshold — the same rule the backend enforces authoritatively.
+ */
+function validateSubtotalRows(rows: SubtotalRangeRow[], freeThreshold: string): string | null {
+  const threshold = Number(freeThreshold);
+  if (freeThreshold === '' || !Number.isFinite(threshold) || threshold < 0) {
+    return 'Free delivery threshold must be 0 or greater.';
+  }
+  if (rows.length === 0) return 'At least one delivery-price range is required.';
+
+  let prevMax = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const max = Number(rows[i].maxSubtotal);
+    const fee = Number(rows[i].deliveryFee);
+    if (rows[i].maxSubtotal === '' || !Number.isFinite(max)) {
+      return `Range ${i + 1}: enter an upper boundary.`;
+    }
+    if (rows[i].deliveryFee === '' || !Number.isFinite(fee) || fee < 0) {
+      return `Range ${i + 1}: enter a delivery fee of 0 or greater.`;
+    }
+    if (Math.round(max * 100) <= Math.round(prevMax * 100)) {
+      return `Range ${i + 1}: upper boundary must be greater than SAR ${prevMax}.`;
+    }
+    prevMax = max;
+  }
+
+  if (Math.round(prevMax * 100) !== Math.round(threshold * 100)) {
+    return `The last range must end exactly at the free-delivery threshold (SAR ${threshold}).`;
   }
   return null;
 }

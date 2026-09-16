@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 
 const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 
-interface PublicSettings {
+export interface PublicSettings {
   futurePickupEnabled: boolean;
   maxReservationDays: number;
   cutoffTime: string | null;
@@ -43,6 +43,14 @@ export interface PickupSchedule {
 interface Props {
   value: PickupSchedule;
   onChange: (next: PickupSchedule) => void;
+  /**
+   * Pickup feature flags, sourced from the checkout page's unified
+   * `POST /checkout/prepare` response (`fulfillment.pickupSettings`) —
+   * this component no longer fetches `/pickup/public-settings` itself.
+   * `null`/`undefined` while checkout hasn't resolved it yet, or when
+   * pickup currently isn't an available fulfillment option.
+   */
+  settings: PublicSettings | null | undefined;
 }
 
 function ymd(date: Date): string {
@@ -76,9 +84,8 @@ function formatHHMMtoLocal(time: string): string {
  * The scheduler self-hides if the feature is disabled OR no slots exist —
  * checkout silently behaves as today-only pickup.
  */
-export function PickupScheduler({ value, onChange }: Props) {
+export function PickupScheduler({ value, onChange, settings }: Props) {
   const t = useTranslations();
-  const { data: settings } = useSWR<PublicSettings>('/pickup/public-settings', fetcher);
 
   const today = useMemo(() => ymd(new Date()), []);
   const selectedDate = value.scheduledPickupDate ?? today;

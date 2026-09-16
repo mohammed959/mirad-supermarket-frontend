@@ -1,11 +1,9 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import useSWR from 'swr';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'next-intl';
-import { useCartItemNames } from '@/hooks/useCartItemNames';
 import {
   ShoppingBag, MapPin, Sparkles, AlertTriangle, ChevronRight,
   Truck, Store, Info, ShieldOff, ShieldCheck,
@@ -14,46 +12,72 @@ import api from '@/lib/api';
 import { useCartStore } from '@/stores/cartStore';
 import { useCustomerAuthStore } from '@/stores/customerAuthStore';
 import { useLocationStore } from '@/stores/locationStore';
-import { CustomerSubscription, Order, PaymentMethod, FulfillmentType } from '@/types';
+import { Order, PaymentMethod, FulfillmentType } from '@/types';
 import { formatPrice, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/Skeleton';
-import { PickupScheduler, type PickupSchedule } from '@/components/customer/PickupScheduler';
-import { DeliveryImagesUploader } from '@/components/customer/DeliveryImagesUploader';
+import { PickupScheduler, type PickupSchedule, type PublicSettings } from '@/components/customer/PickupScheduler';
 import { useLocale } from '@/i18n/useLocale';
 
-const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
-
-interface MinimumOrder {
-  enabled: boolean;
-  minimumAmount: number | string;
+// ── Unified checkout-preparation response (`POST /checkout/prepare`) ──
+// This is the ONLY source of truth for address verification, localized
+// product names, current prices/availability, subtotal, delivery fee,
+// subscription benefit, minimum-order status, available fulfillment
+// types, pickup settings, total, and blockers. Nothing here is
+// calculated, decided, or re-derived on the client.
+interface CheckoutBlocker {
+  code: string;
+  message: string;
+  productId?: string;
 }
 
-interface DeliveryQuote {
-  distanceKm: number | null;
-  isWithinDeliveryRange: boolean;
-  deliveryAvailable: boolean;
-  pickupAvailable: boolean;
-  deliveryFee: number;
-  matchedDistanceRule: {
-    id: string;
-    minKm: number;
-    maxKm: number | null;
-    fee: number;
-    outOfService: boolean;
-    basketThresholdApplied?: boolean;
-    discountApplied?: boolean;
-    discountAmount?: number;
-  } | null;
-  availableFulfillmentTypes: Array<'DELIVERY' | 'PICKUP'>;
-  selectedFulfillmentType: 'DELIVERY' | 'PICKUP' | null;
-  hasActiveSubscription: boolean;
-  pricingRuleApplied: string;
-  branchConfigured: boolean;
-  maxDeliveryKm: number | null;
-  reason: string;
-  message?: string;
+interface CheckoutPreviewItem {
+  productId: string;
+  name: string;
+  sku: string | null;
+  imageUrl: string;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+  available: boolean;
 }
+
+interface CheckoutPreviewAddress {
+  id: string;
+  label: string;
+  addressLine: string | null;
+  city: string | null;
+  latitude: number;
+  longitude: number;
+  deliveryNotes: string | null;
+}
+
+interface CheckoutPrepareResponse {
+  checkoutSessionId: string;
+  expiresAt: string;
+  address: CheckoutPreviewAddress | null;
+  items: CheckoutPreviewItem[];
+  pricing: { subtotal: number; deliveryFee: number; subscriptionDiscount: number; total: number };
+  minimumOrder: { enabled: boolean; minimumAmount: number; satisfied: boolean };
+  delivery: {
+    distanceKm: number | null;
+    withinCoverage: boolean;
+    available: boolean;
+    pricingRuleApplied: string;
+  };
+  fulfillment: {
+    selected: FulfillmentType;
+    availableTypes: FulfillmentType[];
+    pickupSettings: PublicSettings | null;
+  };
+  subscriptionBenefit: { applied: boolean; type: string | null };
+  blockers: CheckoutBlocker[];
+}
+
+// Blocker codes that already get a dedicated, purpose-built notice
+// elsewhere on the page — the generic "review issues" list below only
+// shows whatever isn't already covered by those.
+const BLOCKERS_WITH_DEDICATED_UI = new Set(['MINIMUM_ORDER_NOT_MET', 'OUTSIDE_COVERAGE', 'FULFILLMENT_UNAVAILABLE']);
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -63,9 +87,7 @@ export default function CheckoutPage() {
   // happens to live in the same browser is invisible here.
   const isAuthenticated = useCustomerAuthStore((s) => s.isAuthenticated);
   const items = useCartStore((s) => s.items);
-  const subtotal = useCartStore((s) => s.subtotal());
   const clearCart = useCartStore((s) => s.clearCart);
-  const nameFor = useCartItemNames(items);
 
   const locLabel = useLocationStore((s) => s.label);
   const locLine = useLocationStore((s) => s.addressLine);
@@ -86,8 +108,6 @@ export default function CheckoutPage() {
   const [fulfillmentType, setFulfillmentType] = useState<FulfillmentType>('DELIVERY');
   const [notes, setNotes] = useState('');
   const [replacementPref, setReplacementPref] = useState('');
-  // Up to 3 delivery-location photos (Bunny CDN URLs) for the driver.
-  const [deliveryImages, setDeliveryImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   // Pickup scheduling — defaults to ASAP. Becomes SCHEDULED when the customer
   // picks a future date/slot from the PickupScheduler.
@@ -105,46 +125,68 @@ export default function CheckoutPage() {
     }
   }, [isPickup, pickupSchedule.pickupType]);
 
-  const { data: subscription } = useSWR<CustomerSubscription | null>(
-    isAuthenticated ? `/subscriptions/my?lang=${locale}` : null,
-    fetcher
+  // ── POST /checkout/prepare — the single unified checkout call ─────
+  // Replaces the previous direct calls to /subscriptions/my,
+  // /delivery/minimum-order, /checkout/calculate-delivery, /products?ids=
+  // and /pickup/public-settings. Re-run whenever the selected address,
+  // cart items/quantities, selected fulfillment type, or UI language changes.
+  const itemsKey = useMemo(
+    () => items.map((i) => `${i.productId}:${i.quantity}`).sort().join(','),
+    [items],
   );
 
-  const { data: minimum } = useSWR<MinimumOrder | null>('/delivery/minimum-order', fetcher);
+  const [preview, setPreview] = useState<CheckoutPrepareResponse | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
+  const prepareRequestId = useRef(0);
 
-  // Live delivery quote — single source of truth for distance, fee, and
-  // available fulfillment types. We re-fetch whenever the location, subtotal,
-  // selected fulfillment, or subscription changes.
-  const [quote, setQuote] = useState<DeliveryQuote | null>(null);
+  const runPrepare = useCallback(async (): Promise<CheckoutPrepareResponse | null> => {
+    const requestId = ++prepareRequestId.current;
+    setPreparing(true);
+    setPrepareError(null);
+    try {
+      const res = await api.post<{ data: CheckoutPrepareResponse }>('/checkout/prepare', {
+        lang: locale,
+        addressId: locAddressId ?? undefined,
+        selectedFulfillmentType: fulfillmentType,
+        items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+      });
+      if (prepareRequestId.current !== requestId) return null;
+      setPreview(res.data.data);
+      return res.data.data;
+    } catch (err: any) {
+      if (prepareRequestId.current === requestId) {
+        setPreview(null);
+        setPrepareError(err.response?.data?.message ?? t('checkout.prepareFailed'));
+      }
+      return null;
+    } finally {
+      if (prepareRequestId.current === requestId) setPreparing(false);
+    }
+    // itemsKey mirrors `items` content for change-detection (same pattern as
+    // useCartItemNames' idsKey) — `items` itself is read fresh inside.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [locale, locAddressId, fulfillmentType, itemsKey, t]);
+
   useEffect(() => {
-    if (!hydrated) {
-      setQuote(null);
+    if (!hydrated || !isAuthenticated || items.length === 0) {
+      setPreview(null);
       return;
     }
-    let active = true;
-    api
-      .post<{ data: DeliveryQuote }>('/checkout/calculate-delivery', {
-        customerLatitude: locLat ?? null,
-        customerLongitude: locLng ?? null,
-        customerSubscriptionStatus: subscription?.status ?? 'NONE',
-        selectedFulfillmentType: fulfillmentType,
-        cartSubtotal: subtotal,
-      })
-      .then((res) => { if (active) setQuote(res.data.data); })
-      .catch(() => { if (active) setQuote(null); });
-    return () => { active = false; };
-  }, [hydrated, locLat, locLng, subtotal, isAuthenticated, subscription, fulfillmentType]);
+    runPrepare();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, isAuthenticated, locAddressId, itemsKey, fulfillmentType, locale]);
 
   // Honour the backend's verdict: if delivery isn't an available fulfillment
   // type, snap the customer over to pickup. The UI hides the tile too, but
   // we mustn't ship an order with a stale local selection either.
-  const deliveryAvailable = Boolean(quote?.deliveryAvailable);
-  const pickupAvailable = quote == null ? true : quote.pickupAvailable;
+  const availableTypes = preview?.fulfillment.availableTypes ?? null;
+  const deliveryAvailable = availableTypes ? availableTypes.includes('DELIVERY') : true;
   useEffect(() => {
-    if (quote && !deliveryAvailable && fulfillmentType === 'DELIVERY') {
+    if (availableTypes && !deliveryAvailable && fulfillmentType === 'DELIVERY') {
       setFulfillmentType('PICKUP');
     }
-  }, [quote, deliveryAvailable, fulfillmentType]);
+  }, [availableTypes, deliveryAvailable, fulfillmentType]);
 
   if (!hydrated || !isAuthenticated) {
     return <Skeleton className="h-64 w-full" />;
@@ -162,58 +204,60 @@ export default function CheckoutPage() {
     );
   }
 
-  const minimumAmount = minimum?.enabled ? Number(minimum.minimumAmount) : 0;
-  const belowMinimum = minimumAmount > 0 && subtotal < minimumAmount;
-  // Delivery fee is whatever the backend says — never a hardcoded fallback.
-  // Pickup is always 0. If delivery isn't available, we don't display a fee row
-  // at all (see the summary section below).
-  const effectiveDeliveryFee = isPickup ? 0 : (quote?.deliveryFee ?? 0);
-  const total = subtotal + effectiveDeliveryFee;
   const hasLocation = locLat !== null && locLng !== null;
+  const blockers = preview?.blockers ?? [];
+  const hasBlockers = blockers.length > 0;
+  const otherBlockers = blockers.filter((b) => !BLOCKERS_WITH_DEDICATED_UI.has(b.code));
+  const deliveryBlocker = blockers.find((b) => b.code === 'OUTSIDE_COVERAGE' || b.code === 'FULFILLMENT_UNAVAILABLE');
 
   const scheduledIncomplete =
     isPickup &&
     pickupSchedule.pickupType === 'SCHEDULED' &&
     (!pickupSchedule.scheduledPickupDate || !pickupSchedule.scheduledPickupSlotId);
 
+  const previewItemById = new Map(preview?.items.map((i) => [i.productId, i]) ?? []);
+
   const handlePlaceOrder = async () => {
-    if (!isPickup && !hasLocation) {
-      toast.error(t('checkout.chooseLocation'));
+    // Prevent duplicate submissions (double-tap / slow network).
+    if (loading) return;
+    if (!preview) {
+      toast.error(prepareError ?? t('checkout.prepareFailed'));
+      return;
+    }
+    if (hasBlockers) {
+      toast.error(blockers[0].message);
       return;
     }
     if (scheduledIncomplete) {
       toast.error(t('checkout.pickWindowRequired'));
       return;
     }
-    if (belowMinimum) {
-      toast.error(t('checkout.minimumOrder', { amount: formatPrice(minimumAmount) }));
-      return;
-    }
     setLoading(true);
     try {
       const res = await api.post<{ data: Order }>('/orders', {
-        lang: locale,
-        fulfillmentType,
-        addressId: isPickup ? undefined : locAddressId ?? undefined,
-        deliveryLat: isPickup ? undefined : locLat ?? undefined,
-        deliveryLng: isPickup ? undefined : locLng ?? undefined,
-        deliveryImages: isPickup || deliveryImages.length === 0 ? undefined : deliveryImages,
+        checkoutSessionId: preview.checkoutSessionId,
+        // Required by the order-creation endpoint alongside the checkout
+        // session — derived from the fulfillment choice, never a raw
+        // customer-supplied price/fee/coverage value.
         paymentMethod,
         notes: notes.trim() || undefined,
         replacementPreference: replacementPref.trim() || undefined,
-        // Only send scheduled fields when the user actually picked a slot.
-        ...(isPickup && pickupSchedule.pickupType === 'SCHEDULED' && {
-          pickupType: 'SCHEDULED',
-          scheduledPickupDate: pickupSchedule.scheduledPickupDate,
-          scheduledPickupSlotId: pickupSchedule.scheduledPickupSlotId,
-        }),
-        items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+        pickupType: isPickup && pickupSchedule.pickupType === 'SCHEDULED' ? 'SCHEDULED' : null,
+        scheduledPickupDate:
+          isPickup && pickupSchedule.pickupType === 'SCHEDULED' ? pickupSchedule.scheduledPickupDate ?? null : null,
+        scheduledPickupSlotId:
+          isPickup && pickupSchedule.pickupType === 'SCHEDULED' ? pickupSchedule.scheduledPickupSlotId ?? null : null,
       });
       const created = res.data.data;
       clearCart();
       toast.success(t('checkout.placeOrder'));
       router.push(`/orders/${created.id}`);
     } catch (err: any) {
+      if (err.response?.status === 409 && err.response?.data?.code === 'CHECKOUT_CHANGED') {
+        toast.error(t('checkout.detailsChanged'));
+        await runPrepare();
+        return;
+      }
       toast.error(err.response?.data?.message ?? t('checkout.placeOrder'));
     } finally {
       setLoading(false);
@@ -221,11 +265,8 @@ export default function CheckoutPage() {
   };
 
   const subBenefitLabel = (() => {
-    // Phase 6: subscription benefit only applies when home delivery is
-    // actually eligible. Max-distance gate has higher priority than
-    // subscription, so an out-of-range subscriber sees no banner.
-    if (!subscription || isPickup || !deliveryAvailable) return null;
-    switch (subscription.plan.benefitType) {
+    if (!preview || isPickup || !preview.subscriptionBenefit.applied) return null;
+    switch (preview.subscriptionBenefit.type) {
       case 'FREE_DELIVERY':       return t('checkout.subscriptionFree');
       case 'DISCOUNTED_DELIVERY': return t('checkout.subscriptionDiscounted');
       case 'CAPPED_DELIVERY':     return t('checkout.subscriptionCapped');
@@ -247,15 +288,19 @@ export default function CheckoutPage() {
     <div className="mx-auto max-w-lg space-y-5">
       <h1 className="text-xl font-bold text-gray-900">{t('checkout.title')}</h1>
 
+      {prepareError && !preview && (
+        <div className="rounded-2xl bg-red-50 border border-red-100 p-3 text-sm text-red-600">
+          {prepareError}
+        </div>
+      )}
+
       {/* Fulfillment selector */}
       <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
         <p className="font-semibold text-gray-900">{t('checkout.fulfillment')}</p>
         <div className="grid grid-cols-2 gap-2">
           {fulfillmentOptions.map(({ key, Icon, label, hint }) => {
             const active = fulfillmentType === key;
-            const allowed = quote
-              ? quote.availableFulfillmentTypes.includes(key)
-              : true;
+            const allowed = availableTypes ? availableTypes.includes(key) : true;
             const disabled = !allowed;
             return (
               <button
@@ -285,50 +330,31 @@ export default function CheckoutPage() {
             );
           })}
         </div>
-        {quote && !deliveryAvailable && hasLocation && (
+        {preview && !isPickup && !preview.delivery.available && hasLocation && (
           <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
             <ShieldOff className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
             <div className="text-xs text-amber-800 leading-snug">
               <p className="font-semibold">{t('delivery.notAvailableTitle')}</p>
               <p className="mt-0.5 text-amber-700">
-                {quote.message ?? t('delivery.notAvailableBody')}
+                {deliveryBlocker?.message ?? t('delivery.notAvailableBody')}
               </p>
             </div>
           </div>
         )}
-        {quote && deliveryAvailable && !isPickup && (
+        {preview && !isPickup && preview.delivery.available && (
           <p className="flex items-center gap-1.5 rounded-xl bg-green-50 border border-green-100 px-3 py-2 text-xs font-semibold text-green-700">
             <ShieldCheck className="h-4 w-4 shrink-0" />
             {t('delivery.availableForLocation')}
           </p>
         )}
-        {quote && deliveryAvailable && !isPickup && quote.distanceKm != null && (
+        {preview && !isPickup && preview.delivery.available && preview.delivery.distanceKm != null && (
           <div className="rounded-xl bg-green-50 border border-green-100 px-3 py-2 text-xs space-y-1">
             <div className="flex items-center justify-between">
               <span className="text-green-700 font-semibold">{t('delivery.withinCoverage')}</span>
               <span className="text-green-700 font-mono">
-                {quote.distanceKm.toFixed(1)} km · {formatPrice(quote.deliveryFee)}
-                {quote.matchedDistanceRule && (
-                  <span className="ms-1 opacity-70">
-                    ({quote.matchedDistanceRule.minKm}–{quote.matchedDistanceRule.maxKm ?? '∞'} km)
-                  </span>
-                )}
+                {preview.delivery.distanceKm.toFixed(1)} km · {formatPrice(preview.pricing.deliveryFee)}
               </span>
             </div>
-            {(quote.matchedDistanceRule?.basketThresholdApplied || quote.matchedDistanceRule?.discountApplied) && (
-              <div className="flex flex-wrap gap-1 pt-0.5">
-                {quote.matchedDistanceRule?.basketThresholdApplied && (
-                  <span className="rounded-md bg-white/70 border border-green-200 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
-                    {t('delivery.basketThresholdApplied')}
-                  </span>
-                )}
-                {quote.matchedDistanceRule?.discountApplied && quote.matchedDistanceRule.discountAmount != null && (
-                  <span className="rounded-md bg-white/70 border border-green-200 px-1.5 py-0.5 text-[10px] font-semibold text-green-700">
-                    {t('delivery.discountApplied', { amount: formatPrice(quote.matchedDistanceRule.discountAmount) })}
-                  </span>
-                )}
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -344,25 +370,16 @@ export default function CheckoutPage() {
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs text-gray-500">{t('nav.deliverTo')}</p>
-            <p className="font-semibold text-gray-900 truncate">{locLabel}</p>
-            {locLine && <p className="text-xs text-gray-500 truncate">{locLine}</p>}
+            <p className="font-semibold text-gray-900 truncate">{preview?.address?.label ?? locLabel}</p>
+            {(preview?.address?.addressLine ?? locLine) && (
+              <p className="text-xs text-gray-500 truncate">{preview?.address?.addressLine ?? locLine}</p>
+            )}
             {!hasLocation && (
               <p className="text-xs text-red-500 mt-0.5">{t('checkout.chooseLocation')}</p>
             )}
           </div>
           <ChevronRight className="h-5 w-5 text-gray-400 shrink-0 rtl:rotate-180" />
         </Link>
-      )}
-
-      {/* Delivery location photos (delivery only) — help the driver find the spot */}
-      {!isPickup && (
-        <div className="rounded-2xl bg-white border border-gray-100 p-4 shadow-sm space-y-3">
-          <div>
-            <p className="font-semibold text-gray-900">{t('checkout.deliveryImagesTitle')}</p>
-            <p className="text-xs text-gray-500 mt-0.5">{t('checkout.deliveryImagesHint')}</p>
-          </div>
-          <DeliveryImagesUploader value={deliveryImages} onChange={setDeliveryImages} />
-        </div>
       )}
 
       {/* Pickup summary box */}
@@ -383,7 +400,11 @@ export default function CheckoutPage() {
 
       {/* Pickup scheduler (silently hidden when admin has disabled the feature). */}
       {isPickup && (
-        <PickupScheduler value={pickupSchedule} onChange={setPickupSchedule} />
+        <PickupScheduler
+          value={pickupSchedule}
+          onChange={setPickupSchedule}
+          settings={preview?.fulfillment.pickupSettings}
+        />
       )}
 
       {/* Subscription banner (delivery only) */}
@@ -395,15 +416,17 @@ export default function CheckoutPage() {
       )}
 
       {/* Minimum order warning */}
-      {belowMinimum && (
+      {preview && !preview.minimumOrder.satisfied && (
         <div className="flex items-start gap-3 rounded-2xl bg-amber-50 border border-amber-100 p-3">
           <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
           <div className="text-sm text-amber-700">
             <p className="font-semibold">
-              {t('checkout.addMore', { amount: formatPrice(minimumAmount - subtotal) })}
+              {t('checkout.addMore', {
+                amount: formatPrice(Math.max(0, preview.minimumOrder.minimumAmount - preview.pricing.subtotal)),
+              })}
             </p>
             <p className="text-xs text-amber-600/80 mt-0.5">
-              {t('checkout.minimumOrder', { amount: formatPrice(minimumAmount) })}
+              {t('checkout.minimumOrder', { amount: formatPrice(preview.minimumOrder.minimumAmount) })}
             </p>
           </div>
         </div>
@@ -412,17 +435,24 @@ export default function CheckoutPage() {
       {/* Order items */}
       <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-3">
         <p className="font-semibold text-gray-900">{t('checkout.orderItems')} ({items.length})</p>
-        {items.map((item) => (
-          <div key={item.productId} className="flex justify-between items-center text-sm">
-            <div className="min-w-0">
-              <p className="font-medium text-gray-800 truncate">{nameFor(item)}</p>
-              <p className="text-xs text-gray-500">× {item.quantity}</p>
+        {items.map((item) => {
+          const live = previewItemById.get(item.productId);
+          const name = live?.name ?? (locale === 'ar' && item.productNameAr ? item.productNameAr : item.productName);
+          const unitPrice = live?.unitPrice ?? Number(item.price);
+          const lineTotal = live?.lineTotal ?? unitPrice * item.quantity;
+          const unavailable = live ? !live.available : false;
+          return (
+            <div key={item.productId} className="flex justify-between items-center text-sm">
+              <div className="min-w-0">
+                <p className={cn('font-medium truncate', unavailable ? 'text-red-500 line-through' : 'text-gray-800')}>
+                  {name}
+                </p>
+                <p className="text-xs text-gray-500">× {item.quantity}</p>
+              </div>
+              <p className="font-semibold text-gray-900 shrink-0 ms-3">{formatPrice(lineTotal)}</p>
             </div>
-            <p className="font-semibold text-gray-900 shrink-0 ms-3">
-              {formatPrice(Number(item.price) * item.quantity)}
-            </p>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Notes */}
@@ -452,54 +482,66 @@ export default function CheckoutPage() {
       {/* Summary */}
       <div className="rounded-2xl bg-white border border-gray-100 p-4 space-y-2 text-sm">
         <div className="flex justify-between text-gray-600">
-          <span>{t('cart.subtotal')}</span><span>{formatPrice(subtotal)}</span>
+          <span>{t('cart.subtotal')}</span>
+          <span>{preview ? formatPrice(preview.pricing.subtotal) : '—'}</span>
         </div>
-        {!isPickup && deliveryAvailable && (
+        {!isPickup && preview?.delivery.available && (
           <div className="flex justify-between text-gray-600">
-            <span>{t('cart.delivery')}</span>
+            <span>{t('checkout.deliveryCostLabel')}</span>
             <span>
-              {effectiveDeliveryFee === 0 ? (
-                <span className="text-green-600 font-semibold">{t('common.free')}</span>
+              {preview.pricing.deliveryFee === 0 ? (
+                <span className="text-green-600 font-semibold">{t('checkout.deliveryFreeWord')}</span>
               ) : (
-                formatPrice(effectiveDeliveryFee)
+                formatPrice(preview.pricing.deliveryFee)
               )}
             </span>
           </div>
         )}
-        {!isPickup && !deliveryAvailable && quote && (
+        {!isPickup && preview && !preview.delivery.available && (
           <div className="flex justify-between text-amber-700 text-xs">
-            <span>{t('cart.delivery')}</span>
+            <span>{t('checkout.deliveryCostLabel')}</span>
             <span className="font-semibold">{t('delivery.notAvailableShort')}</span>
           </div>
         )}
         <div className="flex justify-between border-t pt-2 font-bold text-gray-900">
           <span>{t('cart.total')}</span>
-          <span className="text-brand-600">{formatPrice(total)}</span>
+          <span className="text-brand-600">{preview ? formatPrice(preview.pricing.total) : '—'}</span>
         </div>
       </div>
+
+      {/* Any remaining checkout blocker not already surfaced above (invalid
+          address, insufficient stock, unavailable product, empty cart…) —
+          always shown clearly, in the backend's own words. */}
+      {otherBlockers.length > 0 && (
+        <div className="rounded-2xl bg-red-50 border border-red-100 p-3 space-y-1.5">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-red-700">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            {t('checkout.reviewIssues')}
+          </p>
+          <ul className="space-y-1">
+            {otherBlockers.map((b, idx) => (
+              <li key={`${b.code}-${b.productId ?? idx}`} className="text-xs text-red-600">
+                {b.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <Button
         className="w-full"
         size="lg"
         loading={loading}
-        disabled={
-          (!isPickup && !hasLocation) ||
-          (!isPickup && !deliveryAvailable) ||
-          belowMinimum ||
-          (isPickup && !pickupAvailable) ||
-          scheduledIncomplete
-        }
+        disabled={loading || preparing || !preview || hasBlockers || scheduledIncomplete}
         onClick={handlePlaceOrder}
       >
-        {!isPickup && !hasLocation
-          ? t('checkout.chooseLocation')
-          : !isPickup && !deliveryAvailable
-            ? t('delivery.notAvailableShort')
+        {!preview
+          ? (preparing ? t('common.loading') : (prepareError ?? t('checkout.prepareFailed')))
+          : hasBlockers
+            ? blockers[0].message
             : scheduledIncomplete
               ? t('checkout.pickWindowRequired')
-              : belowMinimum
-                ? t('checkout.addMore', { amount: formatPrice(minimumAmount - subtotal) })
-                : `${t('checkout.placeOrder')} · ${formatPrice(total)}`}
+              : `${t('checkout.placeOrder')} · ${formatPrice(preview.pricing.total)}`}
       </Button>
     </div>
   );

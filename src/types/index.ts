@@ -384,6 +384,13 @@ export interface HomeSettings {
   updatedAt: string;
 }
 
+export interface ContactSettings {
+  id: string;
+  phone: string | null;
+  whatsapp: string | null;
+  updatedAt: string;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Storefront homepage aggregation (GET /api/storefront/home)
 //

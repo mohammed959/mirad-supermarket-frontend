@@ -149,7 +149,7 @@ export default function AdminOrderDetailPage() {
     return (
       <div className="flex items-center gap-3">
         <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-          <ProductImage src={productEntity?.imageUrl ?? null} alt={productName} fill sizes="48px" className="object-cover" />
+          <ProductImage src={productEntity?.imageUrl ?? null} altSrc={productEntity?.imageUrlAlt} fallbackSrc={productEntity?.imageUrlFallback} alt={productName} fill sizes="48px" className="object-cover" />
         </div>
         <div className="flex-1 min-w-0">
           {variant !== 'plain' && (

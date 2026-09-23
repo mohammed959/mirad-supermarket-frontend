@@ -184,7 +184,7 @@ function ProductStockTable({ products, onMutate }: { products: Product[]; onMuta
                 <td className="px-4 py-2.5">
                   <Link href={`/admin/products`} className="flex items-center gap-3 min-w-0">
                     <div className="relative h-9 w-9 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                      <ProductImage src={p.imageUrl} alt="" fill sizes="36px" className="object-cover" />
+                      <ProductImage src={p.imageUrl} altSrc={p.imageUrlAlt} fallbackSrc={p.imageUrlFallback} alt="" fill sizes="36px" className="object-cover" />
                     </div>
                     <p className="font-semibold text-gray-800 truncate">{p.name}</p>
                   </Link>

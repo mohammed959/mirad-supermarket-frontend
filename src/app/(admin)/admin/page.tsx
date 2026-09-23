@@ -17,7 +17,7 @@ const fetcher = (url: string) => api.get(url).then((r) => r.data.data);
 interface MostOrdered {
   productId: string;
   quantitySold: number;
-  product: { id: string; name: string; nameAr: string; imageUrl: string | null; sku?: string | null } | null;
+  product: { id: string; name: string; nameAr: string; imageUrl: string | null; imageUrlAlt?: string; imageUrlFallback?: string; sku?: string | null } | null;
 }
 
 interface DashboardStats {
@@ -161,7 +161,7 @@ export default function AdminDashboardPage() {
                     {i + 1}
                   </div>
                   <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                    <ProductImage src={row.product?.imageUrl} alt="" fill sizes="40px" className="object-cover" />
+                    <ProductImage src={row.product?.imageUrl} altSrc={row.product?.imageUrlAlt} fallbackSrc={row.product?.imageUrlFallback} alt="" fill sizes="40px" className="object-cover" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900 truncate">

@@ -112,6 +112,8 @@ export default function OrderDetailPage() {
           productName: i.productName,
           productNameAr: i.productName,
           productImage: i.productImage,
+          productImageAlt: i.productImageAlt,
+          productImageFallback: i.productImageFallback,
           price: i.price,
           quantity: i.quantity,
         }))
@@ -333,12 +335,16 @@ export default function OrderDetailPage() {
               ? pickLocalized(productEntity, locale)
               : '—';
           const productImage = productEntity?.imageUrl ?? null;
+          const productImageAlt = productEntity?.imageUrlAlt ?? null;
+          const productImageFallback = productEntity?.imageUrlFallback ?? null;
           const sku = item.productSku ?? productEntity?.sku ?? item.variant?.sku ?? null;
           return (
             <div key={item.id} className="flex items-center gap-3">
               <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
                 <ProductImage
                   src={productImage}
+                  altSrc={productImageAlt}
+                  fallbackSrc={productImageFallback}
                   alt={productName}
                   fill
                   sizes="48px"

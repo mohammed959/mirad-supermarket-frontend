@@ -64,7 +64,9 @@ function readItem(item: OrderItem, locale: 'en' | 'ar') {
   const sku = item.productSku ?? productEntity?.sku ?? item.variant?.sku ?? null;
   const barcode = item.productBarcode ?? productEntity?.barcode ?? null;
   const imageUrl = productEntity?.imageUrl ?? null;
-  return { name, sku, barcode, imageUrl };
+  const imageUrlAlt = productEntity?.imageUrlAlt ?? null;
+  const imageUrlFallback = productEntity?.imageUrlFallback ?? null;
+  return { name, sku, barcode, imageUrl, imageUrlAlt, imageUrlFallback };
 }
 
 export default function PickerOrderPage() {
@@ -165,7 +167,7 @@ export default function PickerOrderPage() {
             const isReplaced = status === 'REPLACED';
             const isRemoved = status === 'REMOVED';
             const dim = isReplaced || isRemoved;
-            const { name, sku, barcode, imageUrl } = readItem(item, locale);
+            const { name, sku, barcode, imageUrl, imageUrlAlt, imageUrlFallback } = readItem(item, locale);
             const replacement = item.replacedByItemId ? byId.get(item.replacedByItemId) : null;
             return (
               <div
@@ -175,7 +177,7 @@ export default function PickerOrderPage() {
                 <div className={cn('p-3', dim && 'bg-gray-50')}>
                   <div className="flex gap-3 items-center">
                     <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                      <ProductImage src={imageUrl} alt={name} fill sizes="48px" className="object-cover" />
+                      <ProductImage src={imageUrl} altSrc={imageUrlAlt} fallbackSrc={imageUrlFallback} alt={name} fill sizes="48px" className="object-cover" />
                     </div>
                     <div className="flex-1 min-w-0">
                       {replacement && (
@@ -263,7 +265,7 @@ export default function PickerOrderPage() {
                       </p>
                       <div className="flex gap-3 items-center">
                         <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                          <ProductImage src={r.imageUrl} alt={r.name} fill sizes="40px" className="object-cover" />
+                          <ProductImage src={r.imageUrl} altSrc={r.imageUrlAlt} fallbackSrc={r.imageUrlFallback} alt={r.name} fill sizes="40px" className="object-cover" />
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-900 truncate">{r.name}</p>
@@ -419,7 +421,7 @@ function ReplaceItemSheet({
                       )}
                     >
                       <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                        <ProductImage src={p.imageUrl} alt={productName} fill sizes="40px" className="object-cover" />
+                        <ProductImage src={p.imageUrl} altSrc={p.imageUrlAlt} fallbackSrc={p.imageUrlFallback} alt={productName} fill sizes="40px" className="object-cover" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 truncate">{productName}</p>

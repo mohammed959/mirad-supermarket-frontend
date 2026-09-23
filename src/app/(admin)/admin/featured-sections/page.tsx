@@ -170,7 +170,7 @@ export default function AdminFeaturedSectionsPage() {
                   {s.items.map((it) => (
                     <div key={it.id} className="relative shrink-0 w-32 rounded-xl border border-gray-100 bg-gray-50 p-2">
                       <div className="relative aspect-square w-full overflow-hidden rounded-lg bg-white mb-1.5">
-                        <ProductImage src={it.product.imageUrl} alt="" fill sizes="128px" className="object-cover" />
+                        <ProductImage src={it.product.imageUrl} altSrc={it.product.imageUrlAlt} fallbackSrc={it.product.imageUrlFallback} alt="" fill sizes="128px" className="object-cover" />
                       </div>
                       <p className="text-xs font-semibold text-gray-800 line-clamp-2 leading-tight">
                         {it.product.name}
@@ -412,7 +412,7 @@ function ProductPickerDrawer({
                         className="accent-brand-500 h-4 w-4"
                       />
                       <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                        <ProductImage src={p.imageUrl} alt={p.name} fill sizes="48px" className="object-cover" />
+                        <ProductImage src={p.imageUrl} altSrc={p.imageUrlAlt} fallbackSrc={p.imageUrlFallback} alt={p.name} fill sizes="48px" className="object-cover" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>

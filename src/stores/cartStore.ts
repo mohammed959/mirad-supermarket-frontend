@@ -14,6 +14,8 @@ export interface AddableProduct {
   name: string;
   nameAr?: string | null;
   imageUrl: string | null;
+  imageUrlAlt?: string | null;
+  imageUrlFallback?: string | null;
   price: string | number | null;
 }
 import api from '@/lib/api';
@@ -30,6 +32,8 @@ interface ServerCartItem {
   name: string;
   sku: string | null;
   imageUrl: string | null;
+  imageUrlAlt?: string | null;
+  imageUrlFallback?: string | null;
   price: number;
   quantity: number;
   subtotal: number;
@@ -77,6 +81,8 @@ function toCartItem(row: ServerCartItem): CartItem {
     productName: row.name,
     productNameAr: row.name,
     productImage: row.imageUrl,
+    productImageAlt: row.imageUrlAlt,
+    productImageFallback: row.imageUrlFallback,
     price: row.price,
     quantity: row.quantity,
   };
@@ -117,6 +123,8 @@ export const useCartStore = create<CartState>()(
           // keeps downstream renderers with a locale fallback working.
           productNameAr: product.nameAr ?? product.name,
           productImage: product.imageUrl,
+          productImageAlt: product.imageUrlAlt,
+          productImageFallback: product.imageUrlFallback,
           price: Number(product.price ?? 0),
         });
         try {

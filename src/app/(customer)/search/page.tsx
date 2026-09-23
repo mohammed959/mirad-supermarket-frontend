@@ -217,7 +217,7 @@ export default function SearchPage() {
                     className="flex w-full items-center gap-3 px-3 py-2 hover:bg-gray-50 transition-colors"
                   >
                     <div className="relative h-9 w-9 overflow-hidden rounded-lg bg-gray-100">
-                      <ProductImage src={s.imageUrl} alt={s.name} fill sizes="36px" className="object-cover" />
+                      <ProductImage src={s.imageUrl} altSrc={s.imageUrlAlt} fallbackSrc={s.imageUrlFallback} alt={s.name} fill sizes="36px" className="object-cover" />
                     </div>
                     <div className="flex-1 text-start min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{s.name}</p>

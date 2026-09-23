@@ -187,6 +187,8 @@ export default function ProductDetailsPage({ params }: { params: { id: string } 
             <div className="relative aspect-square w-full overflow-hidden rounded-3xl bg-white shadow-soft p-3">
               <ProductImage
                 src={product.imageUrl}
+                altSrc={product.imageUrlAlt}
+                fallbackSrc={product.imageUrlFallback}
                 alt={productName}
                 fill
                 sizes="(max-width: 640px) 100vw, (max-width: 1024px) 40vw, 320px"

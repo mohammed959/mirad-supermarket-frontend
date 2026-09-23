@@ -27,6 +27,10 @@ export interface ProductCardProduct {
   name: string;
   nameAr?: string | null;
   imageUrl: string | null;
+  /** SKU-variant candidate (`{sku}_1`) — tried when `imageUrl` 404s. */
+  imageUrlAlt?: string | null;
+  /** Barcode-derived candidate — tried when `imageUrlAlt` also 404s. */
+  imageUrlFallback?: string | null;
   price: string | number | null;
   available?: boolean;
   isActive?: boolean;
@@ -132,6 +136,8 @@ export function ProductCard({ product }: ProductCardProps) {
       <div className="relative aspect-[4/3] w-full bg-gray-50 overflow-hidden">
         <ProductImage
           src={product.imageUrl}
+          altSrc={product.imageUrlAlt}
+          fallbackSrc={product.imageUrlFallback}
           alt={displayName}
           fill
           sizes="(max-width: 640px) 50vw, 200px"

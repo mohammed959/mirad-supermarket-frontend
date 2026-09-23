@@ -175,7 +175,7 @@ export default function DriverOrderPage() {
           return (
             <div key={item.id} className="flex items-center gap-3">
               <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                <ProductImage src={productEntity?.imageUrl ?? null} alt={name} fill sizes="56px" className="object-cover" />
+                <ProductImage src={productEntity?.imageUrl ?? null} altSrc={productEntity?.imageUrlAlt} fallbackSrc={productEntity?.imageUrlFallback} alt={name} fill sizes="56px" className="object-cover" />
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 leading-tight line-clamp-2">{name}</p>

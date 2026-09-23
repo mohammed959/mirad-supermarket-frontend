@@ -77,6 +77,10 @@ export interface Product {
   description: string | null;
   descriptionAr?: string | null;
   imageUrl: string | null;
+  /** SKU-variant candidate (`{sku}_1`) — tried when `imageUrl` 404s. */
+  imageUrlAlt?: string;
+  /** Barcode-derived candidate — tried when `imageUrlAlt` also 404s. */
+  imageUrlFallback?: string;
   // Flat product-level commerce fields (Phase 1+). Legacy products may still
   // have nulls until backfill runs; the admin UI enforces values for new
   // products via Zod on the backend.
@@ -112,6 +116,10 @@ export interface CartItem {
    *  for backward-compat with carts persisted before this field existed. */
   productNameAr?: string | null;
   productImage: string | null;
+  /** SKU-variant candidate (`{sku}_1`) — tried when `productImage` 404s. */
+  productImageAlt?: string | null;
+  /** Barcode-derived candidate — tried when `productImageAlt` also 404s. */
+  productImageFallback?: string | null;
   price: number;
   quantity: number;
 }
@@ -139,6 +147,8 @@ export interface OrderItem {
     name: string;
     nameAr: string;
     imageUrl: string | null;
+    imageUrlAlt?: string;
+    imageUrlFallback?: string;
     sku?: string | null;
     barcode?: string | null;
   } | null;
@@ -157,6 +167,8 @@ export interface OrderItem {
       name: string;
       nameAr: string;
       imageUrl: string | null;
+      imageUrlAlt?: string;
+      imageUrlFallback?: string;
       sku?: string | null;
       barcode?: string | null;
     };
@@ -232,6 +244,10 @@ export interface ReorderResult {
     productName: string;
     productNameAr?: string | null;
     productImage: string | null;
+    /** SKU-variant candidate (`{sku}_1`) — tried when `productImage` 404s. */
+    productImageAlt: string;
+    /** Barcode-derived candidate — tried when `productImageAlt` also 404s. */
+    productImageFallback: string;
     price: number;
     quantity: number;
     priceChanged: boolean;
@@ -407,6 +423,10 @@ export interface HomeProductCard {
   nameAr: string;
   sku: string | null;
   imageUrl: string;
+  /** SKU-variant candidate (`{sku}_1`) — tried when `imageUrl` 404s. */
+  imageUrlAlt: string;
+  /** Barcode-derived candidate — tried when `imageUrlAlt` also 404s. */
+  imageUrlFallback: string;
   price: string | null;
   available: boolean;
 }
@@ -476,6 +496,10 @@ export interface MarketplaceProduct {
   isFeatured: boolean;
   hideFromHome: boolean;
   imageUrl: string | null;
+  /** SKU-variant candidate (`{sku}_1`) — tried when `imageUrl` 404s. */
+  imageUrlAlt?: string;
+  /** Barcode-derived candidate — tried when `imageUrlAlt` also 404s. */
+  imageUrlFallback?: string;
   categoryId: string;
   subcategoryId: string | null;
   brandId: string | null;
@@ -493,6 +517,10 @@ export interface MarketplaceProductSuggestion {
   name: string;
   sku: string | null;
   imageUrl: string | null;
+  /** SKU-variant candidate (`{sku}_1`) — tried when `imageUrl` 404s. */
+  imageUrlAlt: string;
+  /** Barcode-derived candidate — tried when `imageUrlAlt` also 404s. */
+  imageUrlFallback: string;
   offer: number;
 }
 

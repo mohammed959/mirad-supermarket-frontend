@@ -125,7 +125,7 @@ export function CartDrawer() {
                     return (
                     <li key={item.productId} className="flex gap-3 rounded-xl border border-gray-100 bg-white p-3">
                       <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-100">
-                        <ProductImage src={item.productImage} alt={name} fill sizes="56px" className="object-cover" />
+                        <ProductImage src={item.productImage} altSrc={item.productImageAlt} fallbackSrc={item.productImageFallback} alt={name} fill sizes="56px" className="object-cover" />
                       </div>
 
                       <div className="flex flex-1 flex-col gap-1 min-w-0">

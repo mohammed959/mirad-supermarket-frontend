@@ -115,7 +115,7 @@ export default function CartPage() {
             return (
             <li key={item.productId} className="flex gap-3 p-3">
               <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-2xl bg-gray-100">
-                <ProductImage src={item.productImage} alt={name} fill sizes="64px" className="object-cover" />
+                <ProductImage src={item.productImage} altSrc={item.productImageAlt} fallbackSrc={item.productImageFallback} alt={name} fill sizes="64px" className="object-cover" />
               </div>
               <div className="flex flex-1 flex-col gap-1 min-w-0">
                 <p className="text-sm font-semibold text-gray-900 line-clamp-2 leading-tight">

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import toast from 'react-hot-toast';
 import { useTranslations } from 'next-intl';
-import { Plus, ToggleLeft, ToggleRight, Search, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Plus, Download, ToggleLeft, ToggleRight, Search, ChevronsLeft, ChevronsRight, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '@/lib/api';
 import { Product, Pagination } from '@/types';
 import { formatPrice } from '@/lib/utils';
@@ -35,6 +35,11 @@ export default function AdminProductsPage() {
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
+  const [downloadingMissing, setDownloadingMissing] = useState(false);
+  const { data: imageStatus, mutate: mutateImageStatus } = useSWR<{ total: number; checked: number; remaining: number }>(
+    '/products/export/missing-images/status',
+    fetcher,
+  );
 
   const debouncedSearch = useDebouncedValue(search, 300);
 
@@ -83,6 +88,42 @@ export default function AdminProductsPage() {
   };
 
   const openCreate = () => { setEditing(null); setDrawerOpen(true); };
+  const downloadMissingImages = async () => {
+    setDownloadingMissing(true);
+    try {
+      const res = await api.get('/products/export/missing-images', { responseType: 'blob' });
+      const blob = res.data as Blob;
+      if (blob.type.includes('application/json')) {
+        // No file this time: everything was already checked, or this batch had no missing images.
+        const d = JSON.parse(await blob.text()).data;
+        if (d.allChecked) {
+          toast.success(t('admin.allItemsChecked'));
+        } else {
+          toast.success(t('admin.imageBatchNoneMissing', { checked: d.checked, remaining: d.remaining }));
+          if (d.unverified > 0) toast.error(t('admin.imageBatchUnverified', { count: d.unverified }));
+        }
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'products-missing-images.xlsx';
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err: any) {
+      // Error bodies arrive as a Blob because of responseType: 'blob'.
+      let message = 'Failed to download the sheet';
+      try {
+        const parsed = JSON.parse(await (err.response?.data as Blob).text());
+        if (parsed?.message) message = parsed.message;
+      } catch {}
+      toast.error(message);
+    } finally {
+      setDownloadingMissing(false);
+      mutateImageStatus();
+    }
+  };
+
   const openEdit = (product: Product) => { setEditing(product); setDrawerOpen(true); };
   const closeDrawer = () => { setDrawerOpen(false); setEditing(null); };
 
@@ -90,10 +131,23 @@ export default function AdminProductsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">{t('admin.products')}</h1>
-        <Button size="sm" onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          {t('admin.products')}
-        </Button>
+        <div className="flex items-center gap-2">
+          {imageStatus && (
+            <span className="text-xs text-gray-500">
+              {imageStatus.remaining === 0
+                ? t('admin.allItemsChecked')
+                : t('admin.imageCheckProgress', { ...imageStatus })}
+            </span>
+          )}
+          <Button size="sm" variant="outline" loading={downloadingMissing} onClick={downloadMissingImages}>
+            <Download className="h-4 w-4" />
+            {t('admin.downloadMissingImages')}
+          </Button>
+          <Button size="sm" onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            {t('admin.products')}
+          </Button>
+        </div>
       </div>
 
       {/* Search + page-size */}
